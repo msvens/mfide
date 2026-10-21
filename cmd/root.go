@@ -14,6 +14,9 @@ var rootCmd = &cobra.Command{
 	Long: `mfide imports FIDE's downloadable rating lists into Postgres and serves them over
 a JSON API. Without a subcommand it starts the server.`,
 	Run: func(cmd *cobra.Command, args []string) { server.StartMServer() },
+	// Execute prints the error once; usage would only bury it.
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 // Execute runs the root command; called by main.main().

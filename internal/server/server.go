@@ -44,6 +44,9 @@ func StartMServer() {
 	if err != nil {
 		l.Fatalw("could not connect to database", zap.Error(err))
 	}
+	if err := pg.Check(); err != nil {
+		l.Fatalw("database schema mismatch", zap.Error(err))
+	}
 
 	s := newServer(config.ServerPrefix(), pg, l)
 	srv := &http.Server{Addr: config.ServerAddr(), Handler: s.r}

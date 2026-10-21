@@ -8,5 +8,5 @@ questions, and [CLAUDE.md](CLAUDE.md) for commands and conventions.
 ```sh
 cp config_example.yaml ~/.mfide/config.yaml   # edit db settings
 go run . db check
-go run .                                      # GET http://localhost:8060/api/health
+go run .                                      # GET http://localhost:8051/api/health
 ```

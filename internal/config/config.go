@@ -14,6 +14,12 @@ func InitConfig() error {
 	return readConfig("config")
 }
 
+// NewConfig reads <name>.yaml from the same locations as InitConfig. Tests use it
+// to load config_test.yaml.
+func NewConfig(name string) error {
+	return readConfig(name)
+}
+
 func readConfig(name string) error {
 	viper.SetConfigName(name)
 	viper.SetConfigType("yaml")

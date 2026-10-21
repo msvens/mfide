@@ -13,7 +13,7 @@ func TestConfigExample(t *testing.T) {
 		want any
 	}{
 		{"server.prefix", ServerPrefix(), "/api"},
-		{"server.addr", ServerAddr(), "localhost:8060"},
+		{"server.addr", ServerAddr(), "localhost:8051"},
 		{"service.root", ServiceRoot(), ".server"},
 		{"db.host", DbHost(), "localhost"},
 		{"db.port", DbPort(), 5432},
