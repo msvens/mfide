@@ -16,7 +16,7 @@ type Response struct {
 
 type handler func(r *http.Request) (any, error)
 
-// public wraps a handler that needs no auth.
+// public wraps a handler that needs no auth. Use keyed (auth.go) for data.
 func (s *mserver) public(h handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := h(r)
@@ -34,6 +34,11 @@ func (s *mserver) response(data any, err error, w http.ResponseWriter) {
 		resp = Response{Data: data}
 	default:
 		resp = Response{Err: InternalError("no payload")}
+	}
+	// Transport status is 200 except for auth and rate limiting, where proxies
+	// and clients act on the real status.
+	if resp.Err != nil && (resp.Err.Code == http.StatusUnauthorized || resp.Err.Code == http.StatusTooManyRequests) {
+		w.WriteHeader(resp.Err.Code)
 	}
 	if e := json.NewEncoder(w).Encode(resp); e != nil {
 		s.l.Errorw("could not encode response", zap.Error(e))

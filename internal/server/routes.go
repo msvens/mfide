@@ -7,6 +7,7 @@ import (
 // routes declares every endpoint. Patterns are written without the prefix.
 func (s *mserver) routes() {
 	s.mGET("/health", s.public(s.handleHealth))
+	s.mGET("/key", s.keyed(s.handleKey))
 }
 
 func (s *mserver) mGET(p string, h http.HandlerFunc) {
@@ -26,4 +27,16 @@ func (s *mserver) handleHealth(_ *http.Request) (any, error) {
 		return nil, ServiceUnavailableError("database unreachable")
 	}
 	return health{Status: "ok", DB: "ok"}, nil
+}
+
+type keyInfo struct {
+	Name       string `json:"name"`
+	Prefix     string `json:"prefix"`
+	RatePerMin int    `json:"ratePerMin"`
+}
+
+// handleKey lets a consumer check that their key works and what limit it has.
+func (s *mserver) handleKey(r *http.Request) (any, error) {
+	k := apiKeyFrom(r)
+	return keyInfo{Name: k.Name, Prefix: k.Prefix, RatePerMin: k.RatePerMin}, nil
 }

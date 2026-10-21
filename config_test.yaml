@@ -5,6 +5,11 @@ server:
   port: 8051
   host: localhost
 
+api:
+  defaultRatePerMin: 1000 #new keys; override per key with `key create --rate`
+  keyCacheTTL: 60s #a revoked key stops working within this time
+  ipRatePerMin: 60 #requests without a valid key, per client IP
+
 service:
   root: .server
 
