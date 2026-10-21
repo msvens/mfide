@@ -32,16 +32,9 @@ func openTestDB(t *testing.T) *PGDB {
 	return pg
 }
 
-func sqlStep(stmt string) migration {
-	return migration{desc: stmt, up: func(tx *sqlx.Tx) error {
-		_, err := tx.Exec(stmt)
-		return err
-	}}
-}
-
 var testSteps = []migration{
-	sqlStep("CREATE TABLE t1 (id INT)"),
-	sqlStep("ALTER TABLE t1 ADD COLUMN name TEXT"),
+	sqlMigration("create t1", "CREATE TABLE t1 (id INT)"),
+	sqlMigration("add t1.name", "ALTER TABLE t1 ADD COLUMN name TEXT"),
 }
 
 func tableExists(t *testing.T, db *sqlx.DB, table string) bool {

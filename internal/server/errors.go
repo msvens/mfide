@@ -32,6 +32,16 @@ func InternalError(message string) *ApiError {
 	return newError(http.StatusInternalServerError, message)
 }
 
+// UnauthorizedError and TooManyRequestsError are sent with their real HTTP
+// status (see response), so proxies and client retry logic understand them.
+func UnauthorizedError(message string) *ApiError {
+	return newError(http.StatusUnauthorized, message)
+}
+
+func TooManyRequestsError(message string) *ApiError {
+	return newError(http.StatusTooManyRequests, message)
+}
+
 func ServiceUnavailableError(message string) *ApiError {
 	return newError(http.StatusServiceUnavailable, message)
 }

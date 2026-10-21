@@ -17,7 +17,17 @@ type migration struct {
 // fresh database walks the whole list (there is no separate "latest schema").
 // Append only. Never edit, reorder or delete a step, or databases already past it
 // diverge from fresh ones.
-var migrations = []migration{}
+var migrations = []migration{
+	sqlMigration("api_key", schemaApiKey),
+}
+
+// sqlMigration is a step that only runs SQL.
+func sqlMigration(desc, stmt string) migration {
+	return migration{desc: desc, up: func(tx *sqlx.Tx) error {
+		_, err := tx.Exec(stmt)
+		return err
+	}}
+}
 
 // DbVersion is the schema version this binary requires.
 var DbVersion = len(migrations)

@@ -16,13 +16,14 @@ import (
 
 type mserver struct {
 	pg         *dao.PGDB
+	auth       *auth
 	r          *http.ServeMux
 	l          *zap.SugaredLogger
 	prefixPath string
 }
 
-func newServer(prefixPath string, pg *dao.PGDB, logger *zap.SugaredLogger) *mserver {
-	s := &mserver{pg: pg, r: http.NewServeMux(), l: logger, prefixPath: prefixPath}
+func newServer(prefixPath string, pg *dao.PGDB, a *auth, logger *zap.SugaredLogger) *mserver {
+	s := &mserver{pg: pg, auth: a, r: http.NewServeMux(), l: logger, prefixPath: prefixPath}
 	s.routes()
 	return s
 }
@@ -48,7 +49,8 @@ func StartMServer() {
 		l.Fatalw("database schema mismatch", zap.Error(err))
 	}
 
-	s := newServer(config.ServerPrefix(), pg, l)
+	a := newAuth(pg.ApiKey, config.ApiKeyCacheTTL(), config.ApiIPRatePerMin())
+	s := newServer(config.ServerPrefix(), pg, a, l)
 	srv := &http.Server{Addr: config.ServerAddr(), Handler: s.r}
 
 	done := make(chan os.Signal, 1)

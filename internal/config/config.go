@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -30,7 +31,28 @@ func readConfig(name string) error {
 	viper.SetEnvPrefix("MFIDE")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
+	// Defaults so a config without an api section still limits sensibly.
+	viper.SetDefault("api.defaultRatePerMin", 1000)
+	viper.SetDefault("api.keyCacheTTL", time.Minute)
+	viper.SetDefault("api.ipRatePerMin", 60)
 	return viper.ReadInConfig()
+}
+
+// ApiDefaultRatePerMin is the rate limit given to new keys unless overridden.
+// It is a fuse against bugs and leaked keys, not a quota.
+func ApiDefaultRatePerMin() int {
+	return viper.GetInt("api.defaultRatePerMin")
+}
+
+// ApiKeyCacheTTL is how long a looked-up key is trusted before it's re-read, so
+// a revoke takes effect within this time.
+func ApiKeyCacheTTL() time.Duration {
+	return viper.GetDuration("api.keyCacheTTL")
+}
+
+// ApiIPRatePerMin limits requests without a valid key, per client IP.
+func ApiIPRatePerMin() int {
+	return viper.GetInt("api.ipRatePerMin")
 }
 
 func DbHost() string {

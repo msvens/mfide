@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // config_example.yaml documents every section; keep it in sync with the accessors.
 func TestConfigExample(t *testing.T) {
@@ -15,6 +18,9 @@ func TestConfigExample(t *testing.T) {
 		{"server.prefix", ServerPrefix(), "/api"},
 		{"server.addr", ServerAddr(), "localhost:8051"},
 		{"service.root", ServiceRoot(), ".server"},
+		{"api.defaultRatePerMin", ApiDefaultRatePerMin(), 1000},
+		{"api.keyCacheTTL", ApiKeyCacheTTL(), 60 * time.Second},
+		{"api.ipRatePerMin", ApiIPRatePerMin(), 60},
 		{"db.host", DbHost(), "localhost"},
 		{"db.port", DbPort(), 5432},
 		{"db.user", DbUser(), "user"},
