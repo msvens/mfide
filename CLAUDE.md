@@ -5,9 +5,10 @@ them as a JSON API under `/api`. It replaces the third-party ChessTools API (whi
 scrapes FIDE's HTML) as the FIDE source for `@msvens/schack-se-sdk` and the chess app
 (chess.msvens.com). **No scraping of FIDE's site, only the published download files.**
 
-Status: bare skeleton (config, DB connection, `/api/health`). The schema and importer are not
-designed yet. **Read `docs/findings.md` first:** file formats, URL patterns, the archive,
-verified top-list rules, volumes and open design questions. `docs/legal-notes.md` holds parked
+Status: skeleton (config, DB connection + migrations, `/api/health`). The domain schema and
+importer are not designed yet. The POC plan and todo list live in `docs/todo.md`.
+**Read `docs/findings.md` first:** file formats, URL patterns, the archive, verified top-list
+rules, volumes and open design questions. `docs/legal-notes.md` holds parked
 FIDE-permission and GDPR items that must be settled before any public launch.
 
 # Commands
@@ -16,6 +17,10 @@ FIDE-permission and GDPR items that must be settled before any public launch.
 - Individually: `make lint` (golangci-lint) · `make build` · `make vet` · `make test`
 - Run the server: `go run . service` (or bare `go run .`)
 - Check the DB connection: `go run . db check`
+- Create/migrate the schema: `go run . db upgrade` · show versions: `go run . db version`
+  (the server refuses to start on a schema mismatch)
+- DB tests need Postgres with role/db `mfide_test` (see `config_test.yaml`); they wipe that
+  database and refuse any name not ending in `_test`
 
 # Conventions (mirrors ../mphotos)
 
@@ -29,7 +34,9 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   lives in `error.code`. Never return `(nil, nil)`, which yields a 500. Use the constructors in
   `errors.go`; `ResolveError` maps `sql.ErrNoRows` → 404.
 - **DAO** (`internal/dao/`): `sqlx` over `pgx/v5`, no ORM. Follow mphotos' DAO pattern (one
-  interface per entity on `PGDB`, hand-rolled versioned migrations) when tables arrive.
+  interface per entity on `PGDB`) when tables arrive. Schema changes are append-only steps in
+  `migrations` (`internal/dao/migrate.go`); there is no separate "latest schema", so a fresh DB
+  walks every step. Each step runs in one transaction with its version stamp.
 - **Config:** viper + YAML through free functions in `internal/config`. Searched in
   `$HOME/.mfide`, `/etc/mfide`, `.`; `MFIDE_*` env vars override (e.g. `MFIDE_DB_HOST`).
   `config_example.yaml` documents every key and is asserted by `config_test.go`, so keep them in

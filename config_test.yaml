@@ -1,0 +1,16 @@
+# Used by DB-backed tests (local and CI). The database name must end in _test:
+# tests wipe it.
+server:
+  prefix: /api
+  port: 8051
+  host: localhost
+
+service:
+  root: .server
+
+db:
+  host: localhost
+  port: 5432
+  user: mfide_test
+  password: mfide_test
+  name: mfide_test

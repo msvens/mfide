@@ -1,6 +1,6 @@
 server:
   prefix: /api
-  port: 8060
+  port: 8051
   host: localhost
 
 service:
