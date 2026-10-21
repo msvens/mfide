@@ -1,0 +1,24 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/mfide
+
+# Test binary, built with `go test -c`
+*.test
+
+# Coverage
+*.out
+
+/.idea
+/.fleet
+
+*.secret
+
+# Local service data (downloaded FIDE lists, etc.)
+/.server
+
+# Private working notes, not published
+/docs/

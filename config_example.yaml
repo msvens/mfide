@@ -1,0 +1,14 @@
+server:
+  prefix: /api
+  port: 8060
+  host: localhost
+
+service:
+  root: .server #default; downloaded FIDE lists etc. go under here
+
+db:
+  host: localhost
+  port: 5432
+  user: user
+  password: password
+  name: name
