@@ -10,6 +10,10 @@ api:
   keyCacheTTL: 60s #a revoked key stops working within this time
   ipRatePerMin: 60 #requests without a valid key, per client IP
 
+fide:
+  baseUrl: https://ratings.fide.com/download #only the published download files, never scraped pages
+  fetchDelay: 3s #pause between consecutive downloads
+
 service:
   root: .server
 

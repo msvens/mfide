@@ -19,6 +19,7 @@ type migration struct {
 // diverge from fresh ones.
 var migrations = []migration{
 	sqlMigration("api_key", schemaApiKey),
+	sqlMigration("source_file", schemaSourceFile),
 }
 
 // sqlMigration is a step that only runs SQL.

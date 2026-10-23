@@ -97,11 +97,13 @@ func openDB() (*dao.PGDB, error) {
 	return dao.NewPGDB()
 }
 
+// fmtTime prints in local time; times come back from Postgres and HTTP headers
+// in different zones.
 func fmtTime(t *time.Time) string {
 	if t == nil {
 		return "-"
 	}
-	return t.Format(time.DateTime)
+	return t.Local().Format(time.DateTime)
 }
 
 func init() {

@@ -21,6 +21,8 @@ func TestConfigExample(t *testing.T) {
 		{"api.defaultRatePerMin", ApiDefaultRatePerMin(), 1000},
 		{"api.keyCacheTTL", ApiKeyCacheTTL(), 60 * time.Second},
 		{"api.ipRatePerMin", ApiIPRatePerMin(), 60},
+		{"fide.baseUrl", FideBaseURL(), "https://ratings.fide.com/download"},
+		{"fide.fetchDelay", FideFetchDelay(), 3 * time.Second},
 		{"db.host", DbHost(), "localhost"},
 		{"db.port", DbPort(), 5432},
 		{"db.user", DbUser(), "user"},
