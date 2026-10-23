@@ -25,8 +25,11 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   `fetch list` (into `service.root/downloads/`, recorded in `source_file`)
 - Import: `go run . import current [--file <id>] [--force]` (latest downloaded current list;
   skips already-imported files) · `import runs`
+- Import ratings: `go run . import archive --from 2026-05 [--to] [--type] [--force]`
+  (downloaded monthly per-type archive files → `rating`; vacuums `rating` afterwards)
 - Read API (keyed): `GET /api/v1/players/search?q=&country=&limit=` ·
-  `GET /api/v1/players/{fideid}` · `GET /api/v1/top?type=&list=&country=&limit=`
+  `GET /api/v1/players/{fideid}` · `GET /api/v1/players/{fideid}/history?type=` ·
+  `GET /api/v1/top?type=&list=&country=&limit=`
 - DB tests need Postgres with role/db `mfide_test` (see `config_test.yaml`); they wipe that
   database and refuse any name not ending in `_test`
 
@@ -65,6 +68,12 @@ FIDE-permission and GDPR items that must be settled before any public launch.
 - **Top lists:** rating > 0, flag without `i`, ORDER BY rating DESC, games DESC, name ASC
   (verified against FIDE); juniors = born ≥ year − 20. The WHERE clause must match the partial
   indexes in `dao/playerread.go`, or the planner can't use them.
+- **Ratings:** `rating` is the one place for rating numbers: one row per player and month,
+  std/rapid/blitz rating, games, k and flag as columns (NULL = unrated; FIDE's activity flag is
+  per type). The latest month is "current". Name, country, titles and birth year are never
+  historized; they come from `player`. Each archive file upserts only its type's columns and
+  writes only differences, so re-importing an unchanged file writes nothing. (Phase 5b moves the
+  API's current ratings here and drops the duplicated rating columns from `player`.)
 - **Large files:** FIDE's combined XML is ~858 MB unzipped. Rows flow zip → `xml.Decoder` →
   pgx `COPY` into a temp staging table, then SQL diffs into `player`, in one transaction. Never
   read the file or all rows into memory (the import peaks at ~25 MB). An import that would leave

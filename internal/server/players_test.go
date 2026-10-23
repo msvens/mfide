@@ -20,6 +20,7 @@ type fakePlayers struct {
 	lastCountry string
 	lastLimit   int
 	lastTop     dao.TopQuery
+	history     []dao.RatingMonth
 }
 
 func (f *fakePlayers) Get(id int) (*dao.Player, error) {
@@ -34,6 +35,10 @@ func (f *fakePlayers) Get(id int) (*dao.Player, error) {
 func (f *fakePlayers) Search(terms [][]string, country string, limit int) ([]dao.Player, error) {
 	f.lastTerms, f.lastCountry, f.lastLimit = terms, country, limit
 	return f.players, nil
+}
+
+func (f *fakePlayers) History(id int) ([]dao.RatingMonth, error) {
+	return f.history, nil
 }
 
 func (f *fakePlayers) Top(q dao.TopQuery) ([]dao.Player, error) {
@@ -141,9 +146,46 @@ func TestTopHandler(t *testing.T) {
 	}
 }
 
+func TestHistoryHandler(t *testing.T) {
+	s, fp := playersServer()
+	n := func(v int) *int { return &v }
+	sep := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	oct := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	fp.history = []dao.RatingMonth{
+		{Period: sep, StdRating: n(1600), StdGames: n(2), StdK: n(40)},
+		{Period: oct, StdRating: n(1628), StdGames: n(4), StdK: n(40), BlitzRating: n(1597), BlitzGames: n(9), BlitzK: n(40)},
+	}
+	var out []monthJSON
+	if code := getData(t, s, "/api/v1/players/1786644/history", &out); code != 0 {
+		t.Fatalf("error %d", code)
+	}
+	if len(out) != 2 || out[0].Period != "2026-09" || out[0].Standard.Rating != 1600 || out[0].Blitz != nil ||
+		out[1].Period != "2026-10" || out[1].Blitz.Rating != 1597 || out[1].Rapid != nil {
+		t.Errorf("history %+v", out)
+	}
+
+	// ?type= keeps only that type, and only the months it was rated in.
+	getData(t, s, "/api/v1/players/1786644/history?type=blitz", &out)
+	if len(out) != 1 || out[0].Period != "2026-10" || out[0].Standard != nil || out[0].Blitz.Rating != 1597 {
+		t.Errorf("blitz only %+v", out)
+	}
+	if code := getData(t, s, "/api/v1/players/1786644/history?type=bullet", &out); code != http.StatusBadRequest {
+		t.Errorf("bad type: code %d, want 400", code)
+	}
+	if code := getData(t, s, "/api/v1/players/123/history", &out); code != http.StatusNotFound {
+		t.Errorf("unknown player: code %d, want 404", code)
+	}
+
+	fp.history = nil
+	var empty []monthJSON
+	if code := getData(t, s, "/api/v1/players/1786644/history", &empty); code != 0 || empty == nil || len(empty) != 0 {
+		t.Errorf("no history: code %d, data %v; want an empty list", code, empty)
+	}
+}
+
 func TestReadAPIRequiresKey(t *testing.T) {
 	s, _ := playersServer()
-	for _, path := range []string{"/api/v1/players/search?q=stal", "/api/v1/players/1786644", "/api/v1/top"} {
+	for _, path := range []string{"/api/v1/players/search?q=stal", "/api/v1/players/1786644", "/api/v1/players/1786644/history", "/api/v1/top"} {
 		if rec := get(s, path, ""); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s without key: status %d, want 401", path, rec.Code)
 		}

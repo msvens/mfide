@@ -66,6 +66,8 @@ type PlayerDAO interface {
 	Search(terms [][]string, country string, limit int) ([]Player, error)
 	// Top returns a top list in FIDE's order: rating, then games, then name.
 	Top(q TopQuery) ([]Player, error)
+	// History returns a player's monthly ratings, oldest first.
+	History(fideid int) ([]RatingMonth, error)
 }
 
 type PlayerPG struct {
