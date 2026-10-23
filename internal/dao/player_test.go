@@ -17,16 +17,16 @@ func (r *rows) NextRow() (*Player, error) {
 	return p, nil
 }
 
-func testPlayer(id int, name string, rating int) *Player {
+func testPlayer(id int, name string) *Player {
 	y := 1990
-	return &Player{FideID: id, Name: name, Country: "SWE", Sex: "M", BirthYear: &y, StdRating: rating, StdK: 20}
+	return &Player{FideID: id, Name: name, Country: "SWE", Sex: "M", BirthYear: &y}
 }
 
 // testList is n players with ids 1..n.
 func testList(n int) []*Player {
 	ps := make([]*Player, n)
 	for i := range ps {
-		ps[i] = testPlayer(i+1, "Player, Number", 1500+i)
+		ps[i] = testPlayer(i+1, "Player, Number")
 	}
 	return ps
 }
@@ -72,17 +72,17 @@ func TestImportCurrent(t *testing.T) {
 		t.Errorf("identical re-import changed something: %+v", res)
 	}
 
-	// Next list: 21 is new, 20 is gone, 1 renamed, 2 re-rated, 3 went inactive.
+	// Next list: 21 is new, 20 is gone, 1 renamed, 2 changed federation, 3 got a title.
 	next := testList(19)
 	next[0].Name = "Player, Renamed"
-	next[1].StdRating, next[1].StdGames = 1600, 4
-	next[2].Flag = "i"
-	next = append(next, testPlayer(21, "Player, New", 1400))
+	next[1].Country = "NOR"
+	next[2].Title = "FM"
+	next = append(next, testPlayer(21, "Player, New"))
 	res = importList(t, pg, fileID, next)
 	if res.Players != 20 || res.Inserted != 1 || res.Updated != 3 || res.Removed != 1 {
 		t.Errorf("second import %+v, want 1 inserted, 3 updated, 1 removed", res)
 	}
-	want := map[string]int{"profile": 1, "rating": 1, "flag": 1, "returned": 0}
+	want := map[string]int{"profile": 3, "returned": 0}
 	for k, v := range want {
 		if res.Changes[k] != v {
 			t.Errorf("changes[%s] = %d, want %d (all: %v)", k, res.Changes[k], v, res.Changes)
@@ -96,7 +96,7 @@ func TestImportCurrent(t *testing.T) {
 	}
 
 	// Player 20 comes back.
-	back := append(next, testPlayer(20, "Player, Number", 1519))
+	back := append(next, testPlayer(20, "Player, Number"))
 	res = importList(t, pg, fileID, back)
 	if res.Updated != 1 || res.Changes["returned"] != 1 || res.Removed != 0 {
 		t.Errorf("return import %+v", res)
@@ -134,7 +134,7 @@ func TestImportCurrentGuards(t *testing.T) {
 		t.Errorf("after a refused import: %d active players, %d runs; want 20 and 1", active, runs)
 	}
 
-	dup := rows(append(testList(20), testPlayer(5, "Player, Duplicate", 1000)))
+	dup := rows(append(testList(20), testPlayer(5, "Player, Duplicate")))
 	if _, err := pg.ImportCurrent(fileID, &dup); err == nil {
 		t.Error("a duplicate fideid in the file should fail the import")
 	}

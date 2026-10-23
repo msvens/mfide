@@ -65,15 +65,24 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   ä/ö/ü/ø match both "o" and "oe") and matched as word prefixes on `player.name_norm` with a
   pg_trgm index (the extension is created by migration 4; needs Postgres ≥ 13). Never fold or
   rewrite the stored name.
-- **Top lists:** rating > 0, flag without `i`, ORDER BY rating DESC, games DESC, name ASC
-  (verified against FIDE); juniors = born ≥ year − 20. The WHERE clause must match the partial
-  indexes in `dao/playerread.go`, or the planner can't use them.
-- **Ratings:** `rating` is the one place for rating numbers: one row per player and month,
-  std/rapid/blitz rating, games, k and flag as columns (NULL = unrated; FIDE's activity flag is
-  per type). The latest month is "current". Name, country, titles and birth year are never
-  historized; they come from `player`. Each archive file upserts only its type's columns and
-  writes only differences, so re-importing an unchanged file writes nothing. (Phase 5b moves the
-  API's current ratings here and drops the duplicated rating columns from `player`.)
+- **Two tables, no duplication:** `player` is the profile only (name, country, sex, titles,
+  birth year), from the daily file; its ratings and flag are ignored (they're an exact copy of
+  the current month's archive files). `rating` is the only place for rating numbers: one row per
+  player and month, std/rapid/blitz rating, games, k and flag as columns (NULL = unrated; FIDE's
+  activity flag is per type). Name, country etc. are never historized.
+- **Current month** = the latest month with all three types imported (`currentPeriodSQL`, read
+  from `import_run` + `source_file`). Reads join `player` with `rating` at that month.
+- **Archive import:** each file upserts only its type's columns and writes only differences, so
+  re-importing an unchanged file writes nothing; `import archive` vacuums `rating` afterwards.
+- **Top lists:** current month, type rated and that type's flag without `i`, ORDER BY rating
+  DESC, games DESC, player name ASC (verified against FIDE); juniors = born ≥ year − 20. The
+  rating predicates must match the partial indexes in `dao/playerread.go`. Federation lists
+  sort on `rating + 0` on purpose, so the planner starts from the federation's players instead
+  of walking the world list (which took 460 ms for "top 10 NOR women"); see the comment in
+  `Top`.
+- **Custom plans:** connections set `plan_cache_mode=force_custom_plan` (DSN in `dao.go`).
+  pgx reuses prepared statements, and Postgres' generic plan after 5 runs made country top lists
+  ~150× slower. Keep it unless you re-measure.
 - **Large files:** FIDE's combined XML is ~858 MB unzipped. Rows flow zip → `xml.Decoder` →
   pgx `COPY` into a temp staging table, then SQL diffs into `player`, in one transaction. Never
   read the file or all rows into memory (the import peaks at ~25 MB). An import that would leave

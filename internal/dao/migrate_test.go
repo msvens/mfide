@@ -136,3 +136,16 @@ func TestMigrations(t *testing.T) {
 		t.Errorf("Check after Upgrade: %v", err)
 	}
 }
+
+// TestCustomPlans checks the connection setting that keeps parameterized top
+// lists on custom plans (see NewPGDB).
+func TestCustomPlans(t *testing.T) {
+	pg := openTestDB(t)
+	var mode string
+	if err := pg.db.Get(&mode, "SHOW plan_cache_mode"); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "force_custom_plan" {
+		t.Errorf("plan_cache_mode = %q, want force_custom_plan", mode)
+	}
+}

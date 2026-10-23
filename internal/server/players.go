@@ -13,16 +13,17 @@ import (
 
 // playerStore is the part of dao.PlayerDAO the handlers need; tests fake it.
 type playerStore interface {
-	Get(fideid int) (*dao.Player, error)
-	Search(terms [][]string, country string, limit int) ([]dao.Player, error)
-	Top(q dao.TopQuery) ([]dao.Player, error)
+	Get(fideid int) (*dao.PlayerWithRatings, error)
+	Search(terms [][]string, country string, limit int) ([]dao.PlayerWithRatings, error)
+	Top(q dao.TopQuery) ([]dao.PlayerWithRatings, error)
 	History(fideid int) ([]dao.RatingMonth, error)
 }
 
 type ratingJSON struct {
-	Rating int `json:"rating"`
-	Games  int `json:"games"`
-	K      int `json:"k"`
+	Rating int  `json:"rating"`
+	Games  int  `json:"games"`
+	K      int  `json:"k"`
+	Active bool `json:"active"` // FIDE's activity is per rating type
 }
 
 type playerJSON struct {
@@ -35,7 +36,6 @@ type playerJSON struct {
 	OtherTitles []string    `json:"otherTitles"`
 	FoaTitle    string      `json:"foaTitle"`
 	BirthYear   *int        `json:"birthYear"`
-	Active      bool        `json:"active"`
 	Standard    *ratingJSON `json:"standard"` // null when unrated
 	Rapid       *ratingJSON `json:"rapid"`
 	Blitz       *ratingJSON `json:"blitz"`
@@ -46,14 +46,15 @@ type topJSON struct {
 	playerJSON
 }
 
-func rating(r, games, k int) *ratingJSON {
-	if r == 0 {
+// rating is one type's rating, or nil when the player isn't rated in it.
+func rating(r, games, k *int, flag *string) *ratingJSON {
+	if r == nil {
 		return nil
 	}
-	return &ratingJSON{Rating: r, Games: games, K: k}
+	return &ratingJSON{Rating: *r, Games: *games, K: *k, Active: flag == nil || !strings.Contains(*flag, "i")}
 }
 
-func toJSON(p *dao.Player) playerJSON {
+func toJSON(p *dao.PlayerWithRatings) playerJSON {
 	other := []string{}
 	for _, t := range strings.Split(p.OTitle, ",") {
 		if t = strings.TrimSpace(t); t != "" {
@@ -63,10 +64,10 @@ func toJSON(p *dao.Player) playerJSON {
 	return playerJSON{
 		FideID: p.FideID, Name: p.Name, Country: p.Country, Sex: p.Sex,
 		Title: p.Title, WomenTitle: p.WTitle, OtherTitles: other, FoaTitle: p.FoaTitle,
-		BirthYear: p.BirthYear, Active: !strings.Contains(p.Flag, "i"),
-		Standard: rating(p.StdRating, p.StdGames, p.StdK),
-		Rapid:    rating(p.RapidRating, p.RapidGames, p.RapidK),
-		Blitz:    rating(p.BlitzRating, p.BlitzGames, p.BlitzK),
+		BirthYear: p.BirthYear,
+		Standard:  rating(p.StdRating, p.StdGames, p.StdK, p.StdFlag),
+		Rapid:     rating(p.RapidRating, p.RapidGames, p.RapidK, p.RapidFlag),
+		Blitz:     rating(p.BlitzRating, p.BlitzGames, p.BlitzK, p.BlitzFlag),
 	}
 }
 
@@ -138,13 +139,6 @@ type monthJSON struct {
 	Blitz    *ratingJSON `json:"blitz"`
 }
 
-func monthRating(r, games, k *int) *ratingJSON {
-	if r == nil {
-		return nil
-	}
-	return &ratingJSON{Rating: *r, Games: *games, K: *k}
-}
-
 // handleHistory returns a player's monthly ratings, oldest first. A type the
 // player wasn't rated in that month is null; with ?type= only that type is
 // returned, and only the months it was rated in.
@@ -169,13 +163,13 @@ func (s *mserver) handleHistory(r *http.Request) (any, error) {
 	for _, m := range months {
 		j := monthJSON{Period: m.Period.Format("2006-01")}
 		if typ == "" || typ == "standard" {
-			j.Standard = monthRating(m.StdRating, m.StdGames, m.StdK)
+			j.Standard = rating(m.StdRating, m.StdGames, m.StdK, m.StdFlag)
 		}
 		if typ == "" || typ == "rapid" {
-			j.Rapid = monthRating(m.RapidRating, m.RapidGames, m.RapidK)
+			j.Rapid = rating(m.RapidRating, m.RapidGames, m.RapidK, m.RapidFlag)
 		}
 		if typ == "" || typ == "blitz" {
-			j.Blitz = monthRating(m.BlitzRating, m.BlitzGames, m.BlitzK)
+			j.Blitz = rating(m.BlitzRating, m.BlitzGames, m.BlitzK, m.BlitzFlag)
 		}
 		if j.Standard != nil || j.Rapid != nil || j.Blitz != nil {
 			out = append(out, j)

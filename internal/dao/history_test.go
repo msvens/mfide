@@ -25,11 +25,23 @@ func month(m time.Month) time.Time {
 func importArchive(t *testing.T, pg *PGDB, typ string, period time.Time, rows ...*ArchiveRow) *ImportResult {
 	t.Helper()
 	src := archiveRows(rows)
-	res, err := pg.ImportArchive(sourceFile(t, pg), typ, period, &src)
+	res, err := pg.ImportArchive(archiveFile(t, pg, typ, period), typ, period, &src)
 	if err != nil {
 		t.Fatalf("import %s %s: %v", typ, period.Format("2006-01"), err)
 	}
 	return res
+}
+
+// archiveFile registers a downloaded archive file, as fetch does; the current
+// month is derived from imports of these.
+func archiveFile(t *testing.T, pg *PGDB, typ string, period time.Time) int {
+	t.Helper()
+	f := &SourceFile{Kind: SourceArchive, RatingType: &typ, Period: &period,
+		Url: "https://example.org/" + typ + period.Format("200601") + ".zip", Path: "a.zip", Size: 1, Sha256: "abc"}
+	if err := pg.SourceFile.Insert(f); err != nil {
+		t.Fatal(err)
+	}
+	return f.Id
 }
 
 func val(p *int) int {

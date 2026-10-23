@@ -64,8 +64,8 @@ var importCurrentCmd = &cobra.Command{
 		}
 		fmt.Printf("%d players: %d inserted, %d updated, %d removed in %s\n",
 			res.Players, res.Inserted, res.Updated, res.Removed, time.Since(start).Round(100*time.Millisecond))
-		fmt.Printf("changes among existing players: profile %d, rating %d, flag %d, returned %d\n",
-			res.Changes["profile"], res.Changes["rating"], res.Changes["flag"], res.Changes["returned"])
+		fmt.Printf("changes among existing players: profile %d, returned %d\n",
+			res.Changes["profile"], res.Changes["returned"])
 		return nil
 	},
 }

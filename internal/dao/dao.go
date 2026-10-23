@@ -22,7 +22,13 @@ type PGDB struct {
 func NewPGDB() (*PGDB, error) {
 	// pgx/v5 treats "password=" (empty value) as consuming the next key/value pair,
 	// so it is left out of the DSN when no password is configured.
-	dataSource := fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=disable",
+	//
+	// plan_cache_mode: pgx reuses prepared statements per connection, and after
+	// five executions Postgres may switch to a generic plan that ignores the
+	// parameters. For top lists the best plan depends on them (a small federation
+	// plus women must start from player, the world list from rating): the generic
+	// plan made NOR women go from 5 ms to 890 ms. Planning these queries is cheap.
+	dataSource := fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=disable plan_cache_mode=force_custom_plan",
 		config.DbHost(), config.DbPort(), config.DbUser(), config.DbName())
 	if pw := config.DbPassword(); pw != "" {
 		dataSource += " password=" + pw

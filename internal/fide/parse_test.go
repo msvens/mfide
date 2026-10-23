@@ -80,7 +80,7 @@ func TestParseFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.BirthYear == nil || *row.BirthYear != 1995 || row.StdRating != 2701 || row.RapidK != 20 || row.Flag != "w" {
+	if row.BirthYear == nil || *row.BirthYear != 1995 || row.Title != "GM" || row.WTitle != "WGM" || row.Country != "SWE" {
 		t.Errorf("row %+v", row)
 	}
 
@@ -89,7 +89,7 @@ func TestParseFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if kumar.Name != "Sample Kumar" || kumar.BirthYear != nil || kumar.FoaTitle != "AFM" || kumar.StdRating != 0 {
+	if kumar.Name != "Sample Kumar" || kumar.BirthYear != nil || kumar.FoaTitle != "AFM" {
 		t.Errorf("unrated player without birthday: %+v", kumar)
 	}
 	if players[3].OTitle != "SI,LSI,FA" || players[3].Flag != "wi" {
