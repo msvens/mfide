@@ -10,7 +10,7 @@ import (
 )
 
 func TestHealthWithoutDatabase(t *testing.T) {
-	s := newServer("/api", nil, nil, zap.NewNop().Sugar())
+	s := newServer("/api", nil, nil, nil, zap.NewNop().Sugar())
 
 	rec := httptest.NewRecorder()
 	s.r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/health", nil))

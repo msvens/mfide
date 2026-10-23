@@ -21,6 +21,8 @@ var migrations = []migration{
 	sqlMigration("api_key", schemaApiKey),
 	sqlMigration("source_file", schemaSourceFile),
 	sqlMigration("player, import_run", schemaPlayer),
+	sqlMigration("player search and top-list indexes", schemaPlayerSearch),
+	sqlMigration("per-country top-list indexes", schemaPlayerTopCountry),
 }
 
 // sqlMigration is a step that only runs SQL.

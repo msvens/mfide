@@ -8,6 +8,9 @@ import (
 func (s *mserver) routes() {
 	s.mGET("/health", s.public(s.handleHealth))
 	s.mGET("/key", s.keyed(s.handleKey))
+	s.mGET("/v1/players/search", s.keyed(s.handleSearch))
+	s.mGET("/v1/players/{fideid}", s.keyed(s.handlePlayer))
+	s.mGET("/v1/top", s.keyed(s.handleTop))
 }
 
 func (s *mserver) mGET(p string, h http.HandlerFunc) {
