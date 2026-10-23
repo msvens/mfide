@@ -38,14 +38,13 @@ type Player struct {
 	Flag        string `xml:"flag"`     // '', i (inactive), w (woman), wi
 }
 
-// Row converts a combined-list player to a player table row.
+// Row converts a combined-list player to a player table row: the profile only.
+// Its ratings and flag are ignored; they're an exact copy of the current month's
+// archive files, which fill the rating table.
 func (p *Player) Row() (*dao.Player, error) {
 	r := &dao.Player{
 		FideID: p.FideID, Name: p.Name, Country: p.Country, Sex: p.Sex,
-		Title: p.Title, WTitle: p.WTitle, OTitle: p.OTitle, FoaTitle: p.FoaTitle, Flag: p.Flag,
-		StdRating: p.Rating, StdGames: p.Games, StdK: p.K,
-		RapidRating: p.RapidRating, RapidGames: p.RapidGames, RapidK: p.RapidK,
-		BlitzRating: p.BlitzRating, BlitzGames: p.BlitzGames, BlitzK: p.BlitzK,
+		Title: p.Title, WTitle: p.WTitle, OTitle: p.OTitle, FoaTitle: p.FoaTitle,
 	}
 	if b := strings.TrimSpace(p.Birthday); b != "" {
 		y, err := strconv.Atoi(b)

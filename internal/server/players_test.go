@@ -15,7 +15,7 @@ import (
 
 // fakePlayers records the last query and returns canned players.
 type fakePlayers struct {
-	players     []dao.Player
+	players     []dao.PlayerWithRatings
 	lastTerms   [][]string
 	lastCountry string
 	lastLimit   int
@@ -23,7 +23,7 @@ type fakePlayers struct {
 	history     []dao.RatingMonth
 }
 
-func (f *fakePlayers) Get(id int) (*dao.Player, error) {
+func (f *fakePlayers) Get(id int) (*dao.PlayerWithRatings, error) {
 	for i := range f.players {
 		if f.players[i].FideID == id {
 			return &f.players[i], nil
@@ -32,7 +32,7 @@ func (f *fakePlayers) Get(id int) (*dao.Player, error) {
 	return nil, sql.ErrNoRows
 }
 
-func (f *fakePlayers) Search(terms [][]string, country string, limit int) ([]dao.Player, error) {
+func (f *fakePlayers) Search(terms [][]string, country string, limit int) ([]dao.PlayerWithRatings, error) {
 	f.lastTerms, f.lastCountry, f.lastLimit = terms, country, limit
 	return f.players, nil
 }
@@ -41,18 +41,23 @@ func (f *fakePlayers) History(id int) ([]dao.RatingMonth, error) {
 	return f.history, nil
 }
 
-func (f *fakePlayers) Top(q dao.TopQuery) ([]dao.Player, error) {
+func (f *fakePlayers) Top(q dao.TopQuery) ([]dao.PlayerWithRatings, error) {
 	f.lastTop = q
 	return f.players, nil
 }
 
 func playersServer() (*mserver, *fakePlayers) {
 	by := 2013
-	fp := &fakePlayers{players: []dao.Player{
-		{FideID: 1786644, Name: "Stal, Alvar", Country: "SWE", Sex: "M", BirthYear: &by,
-			StdRating: 1628, StdK: 40, RapidRating: 1708, RapidGames: 3, RapidK: 40},
-		{FideID: 9000002, Name: "Example, Bertil", Country: "SWE", Sex: "M", OTitle: "FT,NA", Flag: "i",
-			StdRating: 2450, StdK: 20},
+	n := func(v int) *int { return &v }
+	f := func(v string) *string { return &v }
+	fp := &fakePlayers{players: []dao.PlayerWithRatings{
+		{Player: dao.Player{FideID: 1786644, Name: "Stal, Alvar", Country: "SWE", Sex: "M", BirthYear: &by},
+			CurrentRatings: dao.CurrentRatings{StdRating: n(1628), StdGames: n(0), StdK: n(40), StdFlag: f(""),
+				RapidRating: n(1708), RapidGames: n(3), RapidK: n(40), RapidFlag: f("")}},
+		// Inactive in standard, active in blitz: activity is per type.
+		{Player: dao.Player{FideID: 9000002, Name: "Example, Bertil", Country: "SWE", Sex: "M", OTitle: "FT,NA"},
+			CurrentRatings: dao.CurrentRatings{StdRating: n(2450), StdGames: n(0), StdK: n(20), StdFlag: f("i"),
+				BlitzRating: n(2300), BlitzGames: n(5), BlitzK: n(20), BlitzFlag: f("")}},
 	}}
 	return newServer("/api", nil, newAuth(defaultKeys(), time.Minute, 600), fp, zap.NewNop().Sugar()), fp
 }
@@ -83,13 +88,17 @@ func TestPlayerJSON(t *testing.T) {
 	if code := getData(t, s, "/api/v1/players/1786644", &p); code != 0 {
 		t.Fatalf("error %d", code)
 	}
-	if p["standard"].(map[string]any)["rating"].(float64) != 1628 || p["blitz"] != nil || p["active"] != true {
+	std := p["standard"].(map[string]any)
+	if std["rating"].(float64) != 1628 || std["active"] != true || p["blitz"] != nil {
 		t.Errorf("player %v", p)
+	}
+	if _, ok := p["active"]; ok {
+		t.Error("activity is per rating type; there should be no top-level active")
 	}
 
 	var bertil playerJSON
 	getData(t, s, "/api/v1/players/9000002", &bertil)
-	if !reflect.DeepEqual(bertil.OtherTitles, []string{"FT", "NA"}) || bertil.Active || bertil.Rapid != nil {
+	if !reflect.DeepEqual(bertil.OtherTitles, []string{"FT", "NA"}) || bertil.Standard.Active || !bertil.Blitz.Active || bertil.Rapid != nil {
 		t.Errorf("bertil %+v", bertil)
 	}
 
