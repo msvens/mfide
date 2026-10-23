@@ -21,6 +21,8 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   (the server refuses to start on a schema mismatch)
 - API keys: `go run . key create --name <who> [--rate N]` (prints the key once) · `key list` ·
   `key revoke <id>`
+- Download FIDE files: `go run . fetch current` · `fetch archive --from 2026-09 [--type]` ·
+  `fetch list` (into `service.root/downloads/`, recorded in `source_file`)
 - DB tests need Postgres with role/db `mfide_test` (see `config_test.yaml`); they wipe that
   database and refuse any name not ending in `_test`
 
@@ -47,6 +49,11 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   `config_example.yaml` documents every key and is asserted by `config_test.go`, so keep them in
   sync.
 - **Logging:** zap, structured. No `fmt.Println` / `log.Printf` in the server.
+- **Downloads** (`internal/fide`): conditional GETs only, one file at a time with
+  `fide.fetchDelay` between, mfide User-Agent. `source_file` holds one row per distinct content;
+  a recheck that finds the same file only bumps `checked_at`. Stored files are never
+  overwritten (a changed file gets a `.<sha8>` suffix). The current month's archive file is
+  provisional until the month ends.
 - **Large files:** FIDE's combined XML is ~857 MB unzipped. Always stream (`encoding/xml`
   Decoder) and bulk-load (`COPY`). Never read it whole.
 

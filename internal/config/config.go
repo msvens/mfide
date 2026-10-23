@@ -35,6 +35,8 @@ func readConfig(name string) error {
 	viper.SetDefault("api.defaultRatePerMin", 1000)
 	viper.SetDefault("api.keyCacheTTL", time.Minute)
 	viper.SetDefault("api.ipRatePerMin", 60)
+	viper.SetDefault("fide.baseUrl", "https://ratings.fide.com/download")
+	viper.SetDefault("fide.fetchDelay", 3*time.Second)
 	return viper.ReadInConfig()
 }
 
@@ -53,6 +55,16 @@ func ApiKeyCacheTTL() time.Duration {
 // ApiIPRatePerMin limits requests without a valid key, per client IP.
 func ApiIPRatePerMin() int {
 	return viper.GetInt("api.ipRatePerMin")
+}
+
+// FideBaseURL is where FIDE's download files live; tests point it elsewhere.
+func FideBaseURL() string {
+	return viper.GetString("fide.baseUrl")
+}
+
+// FideFetchDelay is the pause between consecutive downloads from FIDE.
+func FideFetchDelay() time.Duration {
+	return viper.GetDuration("fide.fetchDelay")
 }
 
 func DbHost() string {
