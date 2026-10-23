@@ -10,6 +10,7 @@ func (s *mserver) routes() {
 	s.mGET("/key", s.keyed(s.handleKey))
 	s.mGET("/v1/players/search", s.keyed(s.handleSearch))
 	s.mGET("/v1/players/{fideid}", s.keyed(s.handlePlayer))
+	s.mGET("/v1/players/{fideid}/history", s.keyed(s.handleHistory))
 	s.mGET("/v1/top", s.keyed(s.handleTop))
 }
 

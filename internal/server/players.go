@@ -16,6 +16,7 @@ type playerStore interface {
 	Get(fideid int) (*dao.Player, error)
 	Search(terms [][]string, country string, limit int) ([]dao.Player, error)
 	Top(q dao.TopQuery) ([]dao.Player, error)
+	History(fideid int) ([]dao.RatingMonth, error)
 }
 
 type ratingJSON struct {
@@ -128,6 +129,59 @@ func (s *mserver) handlePlayer(r *http.Request) (any, error) {
 		return nil, err // sql.ErrNoRows becomes 404
 	}
 	return toJSON(p), nil
+}
+
+type monthJSON struct {
+	Period   string      `json:"period"` // YYYY-MM
+	Standard *ratingJSON `json:"standard"`
+	Rapid    *ratingJSON `json:"rapid"`
+	Blitz    *ratingJSON `json:"blitz"`
+}
+
+func monthRating(r, games, k *int) *ratingJSON {
+	if r == nil {
+		return nil
+	}
+	return &ratingJSON{Rating: *r, Games: *games, K: *k}
+}
+
+// handleHistory returns a player's monthly ratings, oldest first. A type the
+// player wasn't rated in that month is null; with ?type= only that type is
+// returned, and only the months it was rated in.
+func (s *mserver) handleHistory(r *http.Request) (any, error) {
+	id, err := strconv.Atoi(Var(r, "fideid"))
+	if err != nil || id <= 0 {
+		return nil, BadRequestError("fideid must be a positive number")
+	}
+	typ := r.URL.Query().Get("type")
+	if typ != "" && typ != "standard" && typ != "rapid" && typ != "blitz" {
+		return nil, BadRequestError("type must be standard, rapid or blitz")
+	}
+	// Same visibility as the player card: unknown or removed players are 404.
+	if _, err := s.players.Get(id); err != nil {
+		return nil, err
+	}
+	months, err := s.players.History(id)
+	if err != nil {
+		return nil, err
+	}
+	out := []monthJSON{}
+	for _, m := range months {
+		j := monthJSON{Period: m.Period.Format("2006-01")}
+		if typ == "" || typ == "standard" {
+			j.Standard = monthRating(m.StdRating, m.StdGames, m.StdK)
+		}
+		if typ == "" || typ == "rapid" {
+			j.Rapid = monthRating(m.RapidRating, m.RapidGames, m.RapidK)
+		}
+		if typ == "" || typ == "blitz" {
+			j.Blitz = monthRating(m.BlitzRating, m.BlitzGames, m.BlitzK)
+		}
+		if j.Standard != nil || j.Rapid != nil || j.Blitz != nil {
+			out = append(out, j)
+		}
+	}
+	return out, nil
 }
 
 func (s *mserver) handleTop(r *http.Request) (any, error) {

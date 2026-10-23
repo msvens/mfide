@@ -122,38 +122,51 @@ const minKeepRatio = 0.9
 // in memory. New players are inserted, changed ones updated, missing ones marked
 // removed, and an import_run row records it all.
 func (pg *PGDB) ImportCurrent(sourceFileID int, src PlayerSource) (*ImportResult, error) {
-	ctx := context.Background()
 	started := time.Now()
-	conn, err := pg.db.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = conn.Close() }()
-
 	var res *ImportResult
-	err = conn.Raw(func(driverConn any) error {
-		c := driverConn.(*stdlib.Conn).Conn()
-		tx, err := c.Begin(ctx)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback(ctx) }()
+	err := pg.inPgxTx(func(ctx context.Context, tx pgx.Tx) error {
+		var err error
 		if res, err = importCurrent(ctx, tx, src); err != nil {
 			return err
 		}
-		changes, _ := json.Marshal(res.Changes)
-		if _, err := tx.Exec(ctx, `INSERT INTO import_run
-			(source_file_id, started_at, finished_at, players, inserted, updated, removed, changes)
-			VALUES ($1, $2, clock_timestamp(), $3, $4, $5, $6, $7)`, // now() is the transaction start
-			sourceFileID, started, res.Players, res.Inserted, res.Updated, res.Removed, changes); err != nil {
-			return err
-		}
-		return tx.Commit(ctx)
+		return recordImport(ctx, tx, sourceFileID, started, res)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return res, nil
+}
+
+// inPgxTx runs fn in a transaction on a raw pgx connection, which COPY needs, and
+// commits if fn succeeds.
+func (pg *PGDB) inPgxTx(fn func(ctx context.Context, tx pgx.Tx) error) error {
+	ctx := context.Background()
+	conn, err := pg.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	return conn.Raw(func(driverConn any) error {
+		tx, err := driverConn.(*stdlib.Conn).Conn().Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		if err := fn(ctx, tx); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	})
+}
+
+// recordImport adds the import_run row for an import, in its transaction.
+func recordImport(ctx context.Context, tx pgx.Tx, sourceFileID int, started time.Time, res *ImportResult) error {
+	changes, _ := json.Marshal(res.Changes)
+	_, err := tx.Exec(ctx, `INSERT INTO import_run
+		(source_file_id, started_at, finished_at, players, inserted, updated, removed, changes)
+		VALUES ($1, $2, clock_timestamp(), $3, $4, $5, $6, $7)`, // now() is the transaction start
+		sourceFileID, started, res.Players, res.Inserted, res.Updated, res.Removed, changes)
+	return err
 }
 
 func importCurrent(ctx context.Context, tx pgx.Tx, src PlayerSource) (*ImportResult, error) {

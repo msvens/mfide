@@ -113,6 +113,16 @@ func (r *PlayerReader) NextRow() (*dao.Player, error) {
 	return p.Row()
 }
 
+// NextArchiveRow is Next for a monthly per-type archive file; it makes a
+// PlayerReader a dao.ArchiveSource.
+func (r *PlayerReader) NextArchiveRow() (*dao.ArchiveRow, error) {
+	p, err := r.Next()
+	if err != nil {
+		return nil, err
+	}
+	return &dao.ArchiveRow{FideID: p.FideID, Rating: p.Rating, Games: p.Games, K: p.K, Flag: p.Flag}, nil
+}
+
 func (r *PlayerReader) Close() error {
 	return errors.Join(r.rc.Close(), r.zr.Close())
 }
