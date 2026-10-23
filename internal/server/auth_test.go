@@ -37,7 +37,7 @@ func (f *fakeKeys) ByHash(hash string) (*dao.ApiKey, error) {
 const goodKey = "mfide_good"
 
 func testServer(keys *fakeKeys, ipRatePerMin int) *mserver {
-	return newServer("/api", nil, newAuth(keys, time.Minute, ipRatePerMin), zap.NewNop().Sugar())
+	return newServer("/api", nil, newAuth(keys, time.Minute, ipRatePerMin), nil, zap.NewNop().Sugar())
 }
 
 func defaultKeys() *fakeKeys {
