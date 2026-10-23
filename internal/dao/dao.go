@@ -14,6 +14,7 @@ type PGDB struct {
 	db         *sqlx.DB
 	ApiKey     ApiKeyDAO
 	SourceFile SourceFileDAO
+	ImportRun  ImportRunDAO
 }
 
 // NewPGDB opens and pings the configured database.
@@ -33,7 +34,7 @@ func NewPGDB() (*PGDB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	return &PGDB{db: db, ApiKey: NewApiKeyPG(db), SourceFile: NewSourceFilePG(db)}, nil
+	return &PGDB{db: db, ApiKey: NewApiKeyPG(db), SourceFile: NewSourceFilePG(db), ImportRun: NewImportRunPG(db)}, nil
 }
 
 func (p *PGDB) Ping() error {

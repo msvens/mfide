@@ -20,6 +20,7 @@ type migration struct {
 var migrations = []migration{
 	sqlMigration("api_key", schemaApiKey),
 	sqlMigration("source_file", schemaSourceFile),
+	sqlMigration("player, import_run", schemaPlayer),
 }
 
 // sqlMigration is a step that only runs SQL.
