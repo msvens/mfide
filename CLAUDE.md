@@ -34,6 +34,8 @@ FIDE-permission and GDPR items that must be settled before any public launch.
 - Read API (keyed): `GET /api/v1/players/search?q=&country=&limit=` ·
   `GET /api/v1/players/{fideid}` · `GET /api/v1/players/{fideid}/history?type=` ·
   `GET /api/v1/top?type=&list=&country=&limit=`
+- Deploying (requirements, config, first-time setup, upgrades): `DEPLOY.md`; keep it in sync
+  with config keys and commands
 - DB tests need Postgres with role/db `mfide_test` (see `config_test.yaml`); they wipe that
   database and refuse any name not ending in `_test`
 
