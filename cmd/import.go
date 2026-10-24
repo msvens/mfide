@@ -1,17 +1,15 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"text/tabwriter"
 	"time"
 
 	"github.com/msvens/mfide/internal/config"
-	"github.com/msvens/mfide/internal/dao"
 	"github.com/msvens/mfide/internal/fide"
+	"github.com/msvens/mfide/internal/syncer"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +33,7 @@ var importCurrentCmd = &cobra.Command{
 		}
 		defer func() { _ = pg.Close() }()
 
-		file, err := currentFile(pg, importFile)
+		file, err := syncer.LatestCurrent(pg, importFile)
 		if err != nil {
 			return err
 		}
@@ -50,15 +48,9 @@ var importCurrentCmd = &cobra.Command{
 			}
 		}
 
-		r, err := fide.OpenZip(filepath.Join(config.ServiceRoot(), file.Path))
-		if err != nil {
-			return err
-		}
-		defer func() { _ = r.Close() }()
-
 		fmt.Printf("importing file %d (%s, FIDE last-modified %s)\n", file.Id, file.Path, fmtTime(file.LastModified))
 		start := time.Now()
-		res, err := pg.ImportCurrent(file.Id, r)
+		res, err := syncer.ImportCurrentFile(pg, config.ServiceRoot(), file)
 		if err != nil {
 			return err
 		}
@@ -68,26 +60,6 @@ var importCurrentCmd = &cobra.Command{
 			res.Changes["profile"], res.Changes["returned"])
 		return nil
 	},
-}
-
-// currentFile is the source file with that id, or the latest current one.
-func currentFile(pg *dao.PGDB, id int) (*dao.SourceFile, error) {
-	files, err := pg.SourceFile.List(dao.SourceCurrent)
-	if err != nil {
-		return nil, err
-	}
-	if len(files) == 0 {
-		return nil, errors.New("no current list downloaded yet; run `fetch current` first")
-	}
-	if id == 0 {
-		return &files[len(files)-1], nil // List is oldest first
-	}
-	for i := range files {
-		if files[i].Id == id {
-			return &files[i], nil
-		}
-	}
-	return nil, fmt.Errorf("no current-list file with id %d (see `fetch list`)", id)
 }
 
 var (
@@ -114,30 +86,16 @@ var importArchiveCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = pg.Close() }()
-		files, err := pg.SourceFile.List(dao.SourceArchive)
+		files, err := syncer.LatestArchives(pg, from, to, importArchiveType)
 		if err != nil {
 			return err
 		}
-		// Latest download per (type, month): a regenerated file supersedes the older one.
-		latest := map[string]*dao.SourceFile{}
-		var order []string
-		for i := range files {
-			f := &files[i]
-			if f.Period.Before(from) || f.Period.After(to) || (importArchiveType != "all" && *f.RatingType != importArchiveType) {
-				continue
-			}
-			key := f.Period.Format("2006-01") + " " + *f.RatingType
-			if _, seen := latest[key]; !seen {
-				order = append(order, key)
-			}
-			latest[key] = f // List is ordered by fetched_at within (period, type)
-		}
-		if len(order) == 0 {
-			return fmt.Errorf("no downloaded archive files in that range; run `fetch archive` first")
+		if len(files) == 0 {
+			return fmt.Errorf("no downloaded archive files on disk in that range; run `fetch archive` first")
 		}
 		imported := 0
-		for _, key := range order {
-			f := latest[key]
+		for _, f := range files {
+			key := syncer.ArchiveKey(f)
 			if !importForce {
 				done, err := pg.ImportRun.Imported(f.Id)
 				if err != nil {
@@ -148,13 +106,8 @@ var importArchiveCmd = &cobra.Command{
 					continue
 				}
 			}
-			r, err := fide.OpenZip(filepath.Join(config.ServiceRoot(), f.Path))
-			if err != nil {
-				return err
-			}
 			start := time.Now()
-			res, err := pg.ImportArchive(f.Id, *f.RatingType, *f.Period, r)
-			_ = r.Close()
+			res, err := syncer.ImportArchiveFile(pg, config.ServiceRoot(), f)
 			if err != nil {
 				return err
 			}

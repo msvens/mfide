@@ -16,6 +16,7 @@ type PGDB struct {
 	SourceFile SourceFileDAO
 	ImportRun  ImportRunDAO
 	Player     PlayerDAO
+	SyncRun    SyncRunDAO
 }
 
 // NewPGDB opens and pings the configured database.
@@ -41,7 +42,7 @@ func NewPGDB() (*PGDB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	return &PGDB{db: db, ApiKey: NewApiKeyPG(db), SourceFile: NewSourceFilePG(db), ImportRun: NewImportRunPG(db), Player: NewPlayerPG(db)}, nil
+	return &PGDB{db: db, ApiKey: NewApiKeyPG(db), SourceFile: NewSourceFilePG(db), ImportRun: NewImportRunPG(db), Player: NewPlayerPG(db), SyncRun: NewSyncRunPG(db)}, nil
 }
 
 func (p *PGDB) Ping() error {

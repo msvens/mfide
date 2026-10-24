@@ -37,6 +37,10 @@ func ArchiveURL(base, ratingType string, period time.Time) string {
 		strings.ToLower(period.Format("Jan")), period.Year()%100)
 }
 
+// ErrNotFound is a 404: FIDE hasn't published the file (yet). This month's
+// archive files appear in the first days of the month.
+var ErrNotFound = errors.New("not found")
+
 type Outcome int
 
 const (
@@ -90,6 +94,8 @@ func (f *Fetcher) Fetch(url, destRel string, prev *dao.SourceFile) (Outcome, *da
 	switch {
 	case resp.StatusCode == http.StatusNotModified:
 		return NotModified, nil, nil
+	case resp.StatusCode == http.StatusNotFound:
+		return 0, nil, fmt.Errorf("GET %s: %w", url, ErrNotFound)
 	case resp.StatusCode != http.StatusOK:
 		return 0, nil, fmt.Errorf("GET %s: %s", url, resp.Status)
 	}

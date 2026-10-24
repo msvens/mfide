@@ -5,8 +5,9 @@ them as a JSON API under `/api`. It replaces the third-party ChessTools API (whi
 scrapes FIDE's HTML) as the FIDE source for `@msvens/schack-se-sdk` and the chess app
 (chess.msvens.com). **No scraping of FIDE's site, only the published download files.**
 
-Status: skeleton (config, DB connection + migrations, `/api/health`). The domain schema and
-importer are not designed yet. The POC plan and todo list live in `docs/todo.md`.
+Status: POC. Profiles, ratings with history, search, top lists, API keys and a daily
+self-sync with retention work; not deployed yet. The POC plan and todo list live in
+`docs/todo.md`.
 **Read `docs/findings.md` first:** file formats, URL patterns, the archive, verified top-list
 rules, volumes and open design questions. `docs/legal-notes.md` holds parked
 FIDE-permission and GDPR items that must be settled before any public launch.
@@ -27,6 +28,9 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   skips already-imported files) · `import runs`
 - Import ratings: `go run . import archive --from 2026-05 [--to] [--type] [--force]`
   (downloaded monthly per-type archive files → `rating`; vacuums `rating` afterwards)
+- Sync (fetch + import what FIDE changed, then retention): `go run . sync`. The service runs
+  the same thing daily at `sync.at` (plus a catch-up at startup if the last successful sync is
+  over a day old); `sync.enabled: false` turns the scheduler off, e.g. to use cron instead
 - Read API (keyed): `GET /api/v1/players/search?q=&country=&limit=` ·
   `GET /api/v1/players/{fideid}` · `GET /api/v1/players/{fideid}/history?type=` ·
   `GET /api/v1/top?type=&list=&country=&limit=`
@@ -83,6 +87,14 @@ FIDE-permission and GDPR items that must be settled before any public launch.
 - **Custom plans:** connections set `plan_cache_mode=force_custom_plan` (DSN in `dao.go`).
   pgx reuses prepared statements, and Postgres' generic plan after 5 runs made country top lists
   ~150× slower. Keep it unless you re-measure.
+- **Sync** (`internal/syncer`): one run = current list (fetch, import if new), last and this
+  month's archive files (a 404 for this month = not published yet), purge players removed longer
+  than `retention.removedPlayersDays` with their ratings (plus ratings older than that of ids
+  with no player row), cap `rating` at `retention.historyMonths`, prune downloads (archive zips
+  once imported, all but the newest `retention.currentFiles` imported current lists; rows stay
+  with `deleted_at`), vacuum if `rating` changed. A Postgres advisory lock keeps runs from
+  overlapping; runs are recorded in `sync_run` and `/api/health` reports the last one. The
+  fetch/import commands share their code with sync.
 - **Large files:** FIDE's combined XML is ~858 MB unzipped. Rows flow zip → `xml.Decoder` →
   pgx `COPY` into a temp staging table, then SQL diffs into `player`, in one transaction. Never
   read the file or all rows into memory (the import peaks at ~25 MB). An import that would leave

@@ -12,6 +12,15 @@ fide:
   baseUrl: https://ratings.fide.com/download #only the published download files, never scraped pages
   fetchDelay: 3s #pause between consecutive downloads
 
+sync:
+  enabled: true #run the daily sync (fetch, import, retention) inside `mfide service`
+  at: "03:00" #daily, server-local time; FIDE regenerates its files around 21:00 UTC
+
+retention:
+  currentFiles: 2 #newest imported current-list zips kept on disk (archive zips go once imported)
+  removedPlayersDays: 90 #players gone from FIDE's list longer than this are deleted, with their history
+  historyMonths: 60 #months of ratings kept, counting the current month; 0 = keep everything
+
 service:
   root: .server #default; downloaded FIDE lists etc. go under here
 

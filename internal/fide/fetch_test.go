@@ -2,6 +2,7 @@ package fide
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -142,8 +143,13 @@ func TestFetchErrorsLeaveNoFiles(t *testing.T) {
 	f := NewFetcher(root)
 
 	for _, path := range []string{"/missing.zip", "/broken.zip"} {
-		if _, _, err := f.Fetch(ts.URL+path, "downloads/x/file.zip", nil); err == nil {
+		_, _, err := f.Fetch(ts.URL+path, "downloads/x/file.zip", nil)
+		if err == nil {
 			t.Errorf("%s: expected an error", path)
+		}
+		// Sync treats a 404 as "not published yet", so only a 404 may be ErrNotFound.
+		if notFound := errors.Is(err, ErrNotFound); notFound != (path == "/missing.zip") {
+			t.Errorf("%s: errors.Is(%v, ErrNotFound) = %v", path, err, notFound)
 		}
 	}
 	dir := filepath.Join(root, "downloads/x")

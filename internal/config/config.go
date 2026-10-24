@@ -37,6 +37,11 @@ func readConfig(name string) error {
 	viper.SetDefault("api.ipRatePerMin", 60)
 	viper.SetDefault("fide.baseUrl", "https://ratings.fide.com/download")
 	viper.SetDefault("fide.fetchDelay", 3*time.Second)
+	viper.SetDefault("sync.enabled", true)
+	viper.SetDefault("sync.at", "03:00")
+	viper.SetDefault("retention.currentFiles", 2)
+	viper.SetDefault("retention.removedPlayersDays", 90)
+	viper.SetDefault("retention.historyMonths", 60)
 	return viper.ReadInConfig()
 }
 
@@ -65,6 +70,33 @@ func FideBaseURL() string {
 // FideFetchDelay is the pause between consecutive downloads from FIDE.
 func FideFetchDelay() time.Duration {
 	return viper.GetDuration("fide.fetchDelay")
+}
+
+// SyncEnabled runs the daily sync inside `mfide service`. Turn it off to drive
+// `mfide sync` from cron instead.
+func SyncEnabled() bool {
+	return viper.GetBool("sync.enabled")
+}
+
+// SyncAt is the daily sync time, "HH:MM" in the server's local time.
+func SyncAt() string {
+	return viper.GetString("sync.at")
+}
+
+// RetentionCurrentFiles is how many imported current-list zips stay on disk.
+func RetentionCurrentFiles() int {
+	return viper.GetInt("retention.currentFiles")
+}
+
+// RetentionRemovedPlayersDays is how long a player FIDE removed is kept before
+// being deleted with their history.
+func RetentionRemovedPlayersDays() int {
+	return viper.GetInt("retention.removedPlayersDays")
+}
+
+// RetentionHistoryMonths is how many months of ratings are kept; 0 keeps all.
+func RetentionHistoryMonths() int {
+	return viper.GetInt("retention.historyMonths")
 }
 
 func DbHost() string {
