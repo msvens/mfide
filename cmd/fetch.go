@@ -1,18 +1,16 @@
 package cmd
 
 import (
-	"database/sql"
-	"errors"
+	"context"
 	"fmt"
 	"os"
-	"path"
 	"slices"
 	"text/tabwriter"
 	"time"
 
-	"github.com/msvens/mfide/internal/config"
 	"github.com/msvens/mfide/internal/dao"
 	"github.com/msvens/mfide/internal/fide"
+	"github.com/msvens/mfide/internal/syncer"
 	"github.com/spf13/cobra"
 )
 
@@ -30,17 +28,11 @@ var fetchCurrentCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = pg.Close() }()
-		url := fide.CurrentURL(config.FideBaseURL())
-		t := fide.Target{
-			Kind:    dao.SourceCurrent,
-			Url:     url,
-			DestRel: path.Join("downloads", "current", time.Now().Format(time.DateOnly), path.Base(url)),
+		f := syncer.FetchCurrent(pg, syncer.OptionsFromConfig())
+		if f.Err != nil {
+			return f.Err
 		}
-		out, f, err := fide.Download(fide.NewFetcher(config.ServiceRoot()), pg.SourceFile, t)
-		if err != nil {
-			return err
-		}
-		printOutcome(path.Base(url), out, f)
+		printOutcome(f.Name, f.Outcome, f.File)
 		return nil
 	},
 }
@@ -64,72 +56,37 @@ var fetchArchiveCmd = &cobra.Command{
 			}
 			types = []string{archiveType}
 		}
-		from, err := time.Parse("2006-01", archiveFrom)
+		from, to, err := monthRange(archiveFrom, archiveTo)
 		if err != nil {
-			return fmt.Errorf("--from must look like 2026-09: %w", err)
+			return err
 		}
-		to := time.Now().UTC()
-		if archiveTo != "" {
-			if to, err = time.Parse("2006-01", archiveTo); err != nil {
-				return fmt.Errorf("--to must look like 2026-10: %w", err)
-			}
-		}
-		to = time.Date(to.Year(), to.Month(), 1, 0, 0, 0, 0, time.UTC)
-		if to.Before(from) {
-			return fmt.Errorf("--to %s is before --from %s", archiveTo, archiveFrom)
-		}
-
 		pg, err := openDB()
 		if err != nil {
 			return err
 		}
 		defer func() { _ = pg.Close() }()
-		delay := archiveDelay
-		if delay == 0 {
-			delay = config.FideFetchDelay()
+		o := syncer.OptionsFromConfig()
+		if archiveDelay != 0 {
+			o.Delay = archiveDelay
 		}
-		f := fide.NewFetcher(config.ServiceRoot())
-		base := config.FideBaseURL()
-
-		// FIDE keeps regenerating a month's archive file until the month is over
-		// (October's changed on 22 Oct; September's last on 29 Sep), so the
-		// current month is always rechecked.
-		now := time.Now().UTC()
-		thisMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-
-		var failed []string
-		requested := false
+		var months []time.Time
 		for p := from; !p.After(to); p = p.AddDate(0, 1, 0) {
-			for _, typ := range types {
-				url := fide.ArchiveURL(base, typ, p)
-				name := path.Base(url)
-				if !archiveRecheck && p.Before(thisMonth) {
-					if _, err := pg.SourceFile.Latest(url); err == nil {
-						fmt.Printf("%-28s skipped (already have it)\n", name)
-						continue
-					} else if !errors.Is(err, sql.ErrNoRows) {
-						return err
-					}
-				}
-				if requested {
-					time.Sleep(delay) // be polite: one file at a time, with a pause
-				}
-				requested = true
-				period, ratingType := p, typ
-				out, file, err := fide.Download(f, pg.SourceFile, fide.Target{
-					Kind:       dao.SourceArchive,
-					RatingType: &ratingType,
-					Period:     &period,
-					Url:        url,
-					DestRel:    path.Join("downloads", "archive", p.Format("2006-01"), name),
-				})
-				if err != nil {
-					fmt.Printf("%-28s FAILED: %v\n", name, err)
-					failed = append(failed, name)
-					continue
-				}
-				printOutcome(name, out, file)
+			months = append(months, p)
+		}
+		var failed []string
+		err = syncer.FetchArchive(context.Background(), pg, o, months, types, archiveRecheck, func(f syncer.Fetched) {
+			switch {
+			case f.Skipped:
+				fmt.Printf("%-28s skipped (already have it)\n", f.Name)
+			case f.Err != nil:
+				fmt.Printf("%-28s FAILED: %v\n", f.Name, f.Err)
+				failed = append(failed, f.Name)
+			default:
+				printOutcome(f.Name, f.Outcome, f.File)
 			}
+		})
+		if err != nil {
+			return err
 		}
 		if len(failed) > 0 {
 			return fmt.Errorf("%d file(s) failed: %v", len(failed), failed)
@@ -152,7 +109,7 @@ var fetchListCmd = &cobra.Command{
 			return err
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "ID\tKIND\tTYPE\tPERIOD\tSIZE\tSHA\tLAST-MODIFIED (FIDE)\tFETCHED\tCHECKED\tPATH")
+		_, _ = fmt.Fprintln(w, "ID\tKIND\tTYPE\tPERIOD\tSIZE\tSHA\tLAST-MODIFIED (FIDE)\tFETCHED\tCHECKED\tDELETED\tPATH")
 		for _, f := range files {
 			typ, period := "-", "-"
 			if f.RatingType != nil {
@@ -161,9 +118,9 @@ var fetchListCmd = &cobra.Command{
 			if f.Period != nil {
 				period = f.Period.Format("2006-01")
 			}
-			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", f.Id, f.Kind, typ, period,
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", f.Id, f.Kind, typ, period,
 				fmtSize(f.Size), f.Sha256[:8], fmtTime(f.LastModified),
-				f.FetchedAt.Format(time.DateTime), f.CheckedAt.Format(time.DateTime), f.Path)
+				fmtTime(&f.FetchedAt), fmtTime(&f.CheckedAt), fmtTime(f.DeletedAt), f.Path)
 		}
 		return w.Flush()
 	},

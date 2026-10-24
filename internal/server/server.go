@@ -11,11 +11,18 @@ import (
 
 	"github.com/msvens/mfide/internal/config"
 	"github.com/msvens/mfide/internal/dao"
+	"github.com/msvens/mfide/internal/syncer"
 	"go.uber.org/zap"
 )
 
+// statusStore is what /health reads; *dao.PGDB is one.
+type statusStore interface {
+	Ping() error
+	Status() (*dao.Status, error)
+}
+
 type mserver struct {
-	pg         *dao.PGDB
+	pg         statusStore
 	auth       *auth
 	players    playerStore
 	r          *http.ServeMux
@@ -23,11 +30,15 @@ type mserver struct {
 	prefixPath string
 }
 
-func newServer(prefixPath string, pg *dao.PGDB, a *auth, players playerStore, logger *zap.SugaredLogger) *mserver {
+func newServer(prefixPath string, pg statusStore, a *auth, players playerStore, logger *zap.SugaredLogger) *mserver {
 	s := &mserver{pg: pg, auth: a, players: players, r: http.NewServeMux(), l: logger, prefixPath: prefixPath}
 	s.routes()
 	return s
 }
+
+// syncShutdownWait is how long shutdown waits for a sync in progress to reach a
+// step boundary.
+const syncShutdownWait = 10 * time.Second
 
 // StartMServer runs the HTTP server until SIGINT/SIGTERM.
 func StartMServer() {
@@ -50,6 +61,13 @@ func StartMServer() {
 		l.Fatalw("database schema mismatch", zap.Error(err))
 	}
 
+	var at syncer.Clock
+	if config.SyncEnabled() {
+		if at, err = syncer.ParseClock(config.SyncAt()); err != nil {
+			l.Fatalw("invalid config", zap.Error(err))
+		}
+	}
+
 	a := newAuth(pg.ApiKey, config.ApiKeyCacheTTL(), config.ApiIPRatePerMin())
 	s := newServer(config.ServerPrefix(), pg, a, pg.Player, l)
 	srv := &http.Server{Addr: config.ServerAddr(), Handler: s.r}
@@ -64,13 +82,32 @@ func StartMServer() {
 	}()
 	l.Infow("server started", "addr", srv.Addr)
 
+	syncCtx, stopSync := context.WithCancel(context.Background())
+	var syncDone <-chan struct{}
+	if config.SyncEnabled() {
+		syncDone = syncer.Schedule(syncCtx, pg, syncer.OptionsFromConfig(), at, l)
+	} else {
+		l.Info("sync: disabled (sync.enabled); run `mfide sync` yourself")
+	}
+
 	<-done
 	l.Info("shutting down server")
+	stopSync()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		l.Errorw("server shutdown failed", zap.Error(err))
+	}
+	if syncDone != nil {
+		select {
+		case <-syncDone:
+		case <-time.After(syncShutdownWait):
+			// Closing the pool would wait for the sync's queries; exiting ends them,
+			// and Postgres rolls back the open transaction.
+			l.Warn("sync still running; exiting without waiting (its transaction rolls back)")
+			return
+		}
 	}
 	if err := pg.Close(); err != nil {
 		l.Errorw("database close failed", zap.Error(err))

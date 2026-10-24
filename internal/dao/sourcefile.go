@@ -59,6 +59,11 @@ type SourceFileDAO interface {
 	Touch(id int) error
 	// List returns all files of a kind ("" for all), oldest period first.
 	List(kind string) ([]SourceFile, error)
+	// PruneCandidates returns files that may be deleted from disk under the
+	// retention rule (see SourceFilePG.PruneCandidates).
+	PruneCandidates(keepCurrent int) ([]SourceFile, error)
+	// MarkDeleted records that a file was deleted from disk.
+	MarkDeleted(id int) error
 }
 
 type SourceFilePG struct {
