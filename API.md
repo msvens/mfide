@@ -200,6 +200,10 @@ Rules (checked against FIDE's own top lists): players rated in that type and act
 type, ordered by rating, then games played that month, then name. Ties share no rank;
 `rank` is just the position.
 
+Lists are computed from FIDE's official monthly rating list files. FIDE's website top lists
+occasionally show a different rating for a player than FIDE's own files and profile pages,
+which moves them a few places or off the list; mfide follows the files.
+
 ## Names
 
 `name` is always exactly what FIDE has. FIDE names are plain ASCII (no accents: "Stal, Alvar",
