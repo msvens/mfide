@@ -54,32 +54,35 @@ func apiKeyFrom(r *http.Request) *dao.ApiKey {
 // with one are limited per key.
 func (s *mserver) keyed(h handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		k, err := s.auth.lookup(r.Header.Get(apiKeyHeader))
-		if err != nil {
-			if !errors.Is(err, errInvalidKey) {
-				s.response(nil, err, w)
-				return
-			}
-			if d := reserve(s.auth.ipLimits.get(clientIP(r), s.auth.ipRatePerMin)); d > 0 {
-				s.tooManyRequests(d, w)
-				return
-			}
-			s.response(nil, UnauthorizedError("missing or invalid API key"), w)
-			return
-		}
-		if d := reserve(s.auth.keyLimits.get(strconv.Itoa(k.Id), k.RatePerMin)); d > 0 {
-			s.tooManyRequests(d, w)
-			return
-		}
-		s.l.Infow("request", "method", r.Method, "path", r.URL.Path, "key", k.Name)
-		data, err := h(r.WithContext(context.WithValue(r.Context(), ctxKey{}, k)))
-		s.response(data, err, w)
+		start := time.Now()
+		status, key := s.serveKeyed(h, w, r)
+		s.l.Infow("request", requestFields(r, status, start, key)...)
 	}
 }
 
-func (s *mserver) tooManyRequests(wait time.Duration, w http.ResponseWriter) {
+// serveKeyed answers a keyed request and returns the status sent and the key's
+// name ("-" without a valid key).
+func (s *mserver) serveKeyed(h handler, w http.ResponseWriter, r *http.Request) (int, string) {
+	k, err := s.auth.lookup(r.Header.Get(apiKeyHeader))
+	if err != nil {
+		if !errors.Is(err, errInvalidKey) {
+			return s.response(r, nil, err, w), "-"
+		}
+		if d := reserve(s.auth.ipLimits.get(clientIP(r), s.auth.ipRatePerMin)); d > 0 {
+			return s.tooManyRequests(r, d, w), "-"
+		}
+		return s.response(r, nil, UnauthorizedError("missing or invalid API key"), w), "-"
+	}
+	if d := reserve(s.auth.keyLimits.get(strconv.Itoa(k.Id), k.RatePerMin)); d > 0 {
+		return s.tooManyRequests(r, d, w), k.Name
+	}
+	data, err := h(r.WithContext(context.WithValue(r.Context(), ctxKey{}, k)))
+	return s.response(r, data, err, w), k.Name
+}
+
+func (s *mserver) tooManyRequests(r *http.Request, wait time.Duration, w http.ResponseWriter) int {
 	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
-	s.response(nil, TooManyRequestsError("rate limit exceeded"), w)
+	return s.response(r, nil, TooManyRequestsError("rate limit exceeded"), w)
 }
 
 var errInvalidKey = errors.New("invalid API key")

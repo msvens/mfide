@@ -42,7 +42,19 @@ func readConfig(name string) error {
 	viper.SetDefault("retention.currentFiles", 2)
 	viper.SetDefault("retention.removedPlayersDays", 90)
 	viper.SetDefault("retention.historyMonths", 60)
+	viper.SetDefault("log.format", "console")
+	viper.SetDefault("log.level", "info")
 	return viper.ReadInConfig()
+}
+
+// LogFormat is the service log encoding: console or json.
+func LogFormat() string {
+	return viper.GetString("log.format")
+}
+
+// LogLevel is the lowest level the service logs: debug, info, warn or error.
+func LogLevel() string {
+	return viper.GetString("log.level")
 }
 
 // ApiDefaultRatePerMin is the rate limit given to new keys unless overridden.

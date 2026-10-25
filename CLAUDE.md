@@ -51,7 +51,8 @@ FIDE-permission and GDPR items that must be settled before any public launch.
 - **Responses** are always transport-200 with a `{data}` / `{error}` envelope; the real status
   lives in `error.code`. **Exception:** 401 and 429 also use the real HTTP status (429 with
   `Retry-After`) so proxies and clients can act on them. Never return `(nil, nil)`, which yields a 500. Use the constructors in
-  `errors.go`; `ResolveError` maps `sql.ErrNoRows` → 404.
+  `errors.go`; `ResolveError` maps `sql.ErrNoRows` → 404 and any other non-`ApiError` to a
+  generic 500.
 - **DAO** (`internal/dao/`): `sqlx` over `pgx/v5`, no ORM. Follow mphotos' DAO pattern (one
   interface per entity on `PGDB`) when tables arrive. Schema changes are append-only steps in
   `migrations` (`internal/dao/migrate.go`); there is no separate "latest schema", so a fresh DB
@@ -60,7 +61,12 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   `$HOME/.mfide`, `/etc/mfide`, `.`; `MFIDE_*` env vars override (e.g. `MFIDE_DB_HOST`).
   `config_example.yaml` documents every key and is asserted by `config_test.go`, so keep them in
   sync.
-- **Logging:** zap, structured. No `fmt.Println` / `log.Printf` in the server.
+- **Logging:** zap, structured, to stderr; built from `log.format` (console/json) and
+  `log.level` in `server/logger.go`. No `fmt.Println` / `log.Printf` in the server (the CLI
+  commands print with `fmt`; that's user output). One `request` line per answered request
+  (method, path, status, ms, key, ip): Info for keyed endpoints incl. 401/429, Debug for
+  `/health`. Unexpected errors reach clients as a generic 500 and are logged in full by
+  `response`; never put internal error text in an `ApiError`.
 - **Downloads** (`internal/fide`): conditional GETs only, one file at a time with
   `fide.fetchDelay` between, mfide User-Agent. `source_file` holds one row per distinct content;
   a recheck that finds the same file only bumps `checked_at`. Stored files are never
