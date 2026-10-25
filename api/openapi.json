@@ -1,0 +1,666 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "mfide",
+    "version": "1.0.0",
+    "summary": "FIDE rating data from FIDE's official downloadable rating lists.",
+    "description": "Player profiles, current ratings, monthly rating history and top lists, refreshed from FIDE's official download files once a day; ratings change once a month. Guide (matching rules, how FIDE names look): https://github.com/msvens/mfide/blob/main/API.md\n\nEvery response is JSON with either `data` or `error`, sent with HTTP 200; the real status is `error.code` (400 bad parameter, 404 not found, 500 server error, 503 database unreachable). Exceptions: 401 (missing or invalid key) and 429 (rate limited, with `Retry-After`) use the real HTTP status.",
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/msvens/mfide/blob/main/LICENSE"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ],
+  "security": [
+    {
+      "apiKey": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Service status, data freshness and versions",
+        "description": "No key needed. For monitoring: alert on `lastSync.ok` false or a `lastSync.finishedAt` older than about two days. An unreachable database is an error with code 503 (HTTP 200).",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Health, or an error (503 database unreachable, 500).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["data"],
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Health"
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getOpenAPI",
+        "summary": "This document",
+        "description": "No key needed. Returned as is, without the `data` envelope.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The OpenAPI document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/key": {
+      "get": {
+        "operationId": "getKey",
+        "summary": "The calling key's name and rate limit",
+        "responses": {
+          "200": {
+            "description": "Key info, or an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["data"],
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/KeyInfo"
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/players/search": {
+      "get": {
+        "operationId": "searchPlayers",
+        "summary": "Find current players by name or FIDE id",
+        "description": "Words match in any order and are folded the way FIDE spells names (ASCII only; ä/ö/ü/ø match both spellings). With `match=prefix` every word must start a word of the name: names where the earlier words match whole words come first, then the best rating (of standard, rapid, blitz), then name; the last word counts as still being typed. With `match=word` every word must be a whole word, ordered by rating. A `q` of digits only is a FIDE id: a list with that player, or an empty list.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Name words (at most 5, at least one with 2+ letters), or digits only for a FIDE id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "match",
+            "in": "query",
+            "description": "`prefix`: every word starts a word of the name (type-ahead). `word`: whole words only.",
+            "schema": {
+              "type": "string",
+              "enum": ["prefix", "word"],
+              "default": "prefix"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/country"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Players, best match first, or an error (400 bad parameter).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["data"],
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Player"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/players/{fideid}": {
+      "get": {
+        "operationId": "getPlayer",
+        "summary": "One current player with current ratings",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fideid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The player, or an error (404 \"player not found\" for unknown players and players FIDE has removed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["data"],
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Player"
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/players/{fideid}/history": {
+      "get": {
+        "operationId": "getPlayerHistory",
+        "summary": "A player's monthly ratings, oldest first",
+        "description": "Up to 60 months (the operator's retention setting). Profile fields (name, federation, titles) are not historized.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/fideid"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Only this rating type, and only months the player was rated in it. Without it, all types.",
+            "schema": {
+              "type": "string",
+              "enum": ["standard", "rapid", "blitz"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Months, oldest first, or an error (404 \"player not found\").",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["data"],
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/HistoryEntry"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/v1/top": {
+      "get": {
+        "operationId": "getTopList",
+        "summary": "A top list for the current month, in FIDE's order",
+        "description": "Players rated and active in that type, ordered by rating, then games played that month, then name. Computed from FIDE's official monthly files; FIDE's website top lists occasionally show a different rating for a player than FIDE's own files and profile pages.",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["standard", "rapid", "blitz"],
+              "default": "standard"
+            }
+          },
+          {
+            "name": "list",
+            "in": "query",
+            "description": "`juniors` and `girls`: born in the last 20 years (current year − 20 or later).",
+            "schema": {
+              "type": "string",
+              "enum": ["open", "women", "juniors", "girls"],
+              "default": "open"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/country"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries in rank order, or an error (400 bad parameter).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["data"],
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/TopEntry"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorEnvelope"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Issued by the operator. Keep it server-side; never ship it to a browser."
+      }
+    },
+    "parameters": {
+      "fideid": {
+        "name": "fideid",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "country": {
+        "name": "country",
+        "in": "query",
+        "description": "Only this FIDE federation (three letters, e.g. SWE).",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{3}$"
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing, unknown or revoked key (real HTTP status).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limit exceeded (real HTTP status).",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds to wait before retrying.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "The real status: 400, 401, 404, 429, 500 or 503."
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          }
+        }
+      },
+      "Rating": {
+        "type": "object",
+        "required": ["rating", "games", "k", "active"],
+        "properties": {
+          "rating": {
+            "type": "integer"
+          },
+          "games": {
+            "type": "integer",
+            "description": "Rated games in that month's list."
+          },
+          "k": {
+            "type": "integer",
+            "description": "K-factor."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "FIDE's activity flag, per rating type: a player can be inactive in standard and active in rapid."
+          }
+        }
+      },
+      "Player": {
+        "type": "object",
+        "description": "Ratings are the current month's: the latest month for which all three rating types are published.",
+        "required": ["fideId", "name", "country", "sex", "title", "womenTitle", "otherTitles", "foaTitle", "birthYear", "standard", "rapid", "blitz"],
+        "properties": {
+          "fideId": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "description": "Exactly as FIDE spells it, usually \"Last, First\". See the guide's Names section."
+          },
+          "country": {
+            "type": "string",
+            "description": "Three-letter FIDE federation code."
+          },
+          "sex": {
+            "type": "string",
+            "enum": ["M", "F"]
+          },
+          "title": {
+            "type": "string",
+            "description": "GM, IM, FM, CM, WGM, WIM, WFM, WCM, or empty."
+          },
+          "womenTitle": {
+            "type": "string",
+            "description": "WGM, WIM, WFM or WCM held alongside title, or empty."
+          },
+          "otherTitles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Arbiter, trainer and organizer titles (IA, FA, NA, FT, FI, FST, DI, IO, AO, SI, NI, LSI, SLI)."
+          },
+          "foaTitle": {
+            "type": "string",
+            "description": "FIDE Online Arena title (AGM, AIM, AFM, ACM, …), or empty."
+          },
+          "birthYear": {
+            "type": ["integer", "null"],
+            "description": "Null for about 2% of players."
+          },
+          "standard": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rating"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when unrated in standard."
+          },
+          "rapid": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rating"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when unrated in rapid."
+          },
+          "blitz": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rating"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when unrated in blitz."
+          }
+        }
+      },
+      "TopEntry": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Player"
+          },
+          {
+            "type": "object",
+            "required": ["rank"],
+            "properties": {
+              "rank": {
+                "type": "integer",
+                "description": "1-based position; ties don't share a rank."
+              }
+            }
+          }
+        ]
+      },
+      "HistoryEntry": {
+        "type": "object",
+        "required": ["period", "standard", "rapid", "blitz"],
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "YYYY-MM."
+          },
+          "standard": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rating"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null in months the player wasn't rated in standard."
+          },
+          "rapid": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blitz": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Rating"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": ["status", "db", "apiVersion", "build"],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "db": {
+            "type": "string",
+            "description": "\"ok\", or \"not configured\"."
+          },
+          "apiVersion": {
+            "type": "string",
+            "description": "This document's info.version."
+          },
+          "build": {
+            "type": "string",
+            "description": "Git revision the binary was built from (\"-dirty\" if from a modified tree), or \"unknown\"."
+          },
+          "ratingsMonth": {
+            "type": "string",
+            "description": "The current month, YYYY-MM."
+          },
+          "lastImport": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSync": {
+            "$ref": "#/components/schemas/SyncInfo"
+          }
+        }
+      },
+      "SyncInfo": {
+        "type": "object",
+        "required": ["finishedAt", "ok"],
+        "properties": {
+          "finishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "KeyInfo": {
+        "type": "object",
+        "required": ["name", "prefix", "ratePerMin"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string",
+            "description": "First characters of the key after mfide_, to tell keys apart."
+          },
+          "ratePerMin": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

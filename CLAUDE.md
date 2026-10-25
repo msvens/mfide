@@ -31,8 +31,17 @@ FIDE-permission and GDPR items that must be settled before any public launch.
 - Sync (fetch + import what FIDE changed, then retention): `go run . sync`. The service runs
   the same thing daily at `sync.at` (plus a catch-up at startup if the last successful sync is
   over a day old); `sync.enabled: false` turns the scheduler off, e.g. to use cron instead
-- Read API (keyed), params, response fields and how FIDE names look: `API.md`; keep it in sync
-  with endpoints, params and response fields
+- API: `api/openapi.json` is the contract (paths, params, limits, fields; OpenAPI 3.1,
+  hand-written, embedded and served at `/api/openapi.json` byte for byte) and `API.md` is the
+  guide (behaviour, search rules, how FIDE names look; no exact limits or field lists). An API
+  change updates both: `make ci` fails if the spec and the handlers/response structs disagree
+  (`server/openapi_test.go`) or API.md doesn't mention a path or query param
+  (`server/apidoc_test.go`). Keep the JSON's key order stable: clients diff it.
+- Release: `make release VERSION=x.y.z [DRY_RUN=1]` (`scripts/release.sh`): on a clean `main`
+  that matches origin, runs `make ci` and pushes the tag `vX.Y.Z`. If `api/openapi.json`
+  changed since the last tag, its `info.version` must be set to the release version first
+  (so `info.version` = the release in which the API last changed). `/api/health` reports
+  `apiVersion` and `build` (git revision).
 - Deploying (requirements, config, first-time setup, upgrades): `DEPLOY.md`; keep it in sync
   with config keys and commands
 - DB tests need Postgres with role/db `mfide_test` (see `config_test.yaml`); they wipe that

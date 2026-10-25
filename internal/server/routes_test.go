@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/msvens/mfide/api"
 	"github.com/msvens/mfide/internal/dao"
 	"go.uber.org/zap"
 )
@@ -26,7 +27,7 @@ func TestHealthWithoutDatabase(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Data != (health{Status: "ok", DB: "not configured"}) {
+	if resp.Data != (health{Status: "ok", DB: "not configured", ApiVersion: api.Version(), Build: build}) {
 		t.Errorf("data = %+v", resp.Data)
 	}
 }
