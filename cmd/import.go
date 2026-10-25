@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/msvens/mfide/internal/config"
+	"github.com/msvens/mfide/internal/dao"
 	"github.com/msvens/mfide/internal/fide"
 	"github.com/msvens/mfide/internal/syncer"
 	"github.com/spf13/cobra"
@@ -32,34 +33,39 @@ var importCurrentCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = pg.Close() }()
-
-		file, err := syncer.LatestCurrent(pg, importFile)
-		if err != nil {
-			return err
-		}
-		if !importForce {
-			done, err := pg.ImportRun.Imported(file.Id)
-			if err != nil {
-				return err
-			}
-			if done {
-				fmt.Printf("file %d (%s) is already imported; use --force to import it again\n", file.Id, file.Path)
-				return nil
-			}
-		}
-
-		fmt.Printf("importing file %d (%s, FIDE last-modified %s)\n", file.Id, file.Path, fmtTime(file.LastModified))
-		start := time.Now()
-		res, err := syncer.ImportCurrentFile(pg, config.ServiceRoot(), file)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("%d players: %d inserted, %d updated, %d removed in %s\n",
-			res.Players, res.Inserted, res.Updated, res.Removed, time.Since(start).Round(100*time.Millisecond))
-		fmt.Printf("changes among existing players: profile %d, returned %d\n",
-			res.Changes["profile"], res.Changes["returned"])
-		return nil
+		return writeLocked(pg, func() error { return importCurrent(pg) })
 	},
+}
+
+// importCurrent imports the latest (or --file) current list unless it's already
+// imported (--force imports it again).
+func importCurrent(pg *dao.PGDB) error {
+	file, err := syncer.LatestCurrent(pg, importFile)
+	if err != nil {
+		return err
+	}
+	if !importForce {
+		done, err := pg.ImportRun.Imported(file.Id)
+		if err != nil {
+			return err
+		}
+		if done {
+			fmt.Printf("file %d (%s) is already imported; use --force to import it again\n", file.Id, file.Path)
+			return nil
+		}
+	}
+
+	fmt.Printf("importing file %d (%s, FIDE last-modified %s)\n", file.Id, file.Path, fmtTime(file.LastModified))
+	start := time.Now()
+	res, err := syncer.ImportCurrentFile(pg, config.ServiceRoot(), file)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%d players: %d inserted, %d updated, %d removed in %s\n",
+		res.Players, res.Inserted, res.Updated, res.Removed, time.Since(start).Round(100*time.Millisecond))
+	fmt.Printf("changes among existing players: profile %d, returned %d\n",
+		res.Changes["profile"], res.Changes["returned"])
+	return nil
 }
 
 var (
@@ -86,44 +92,50 @@ var importArchiveCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = pg.Close() }()
-		files, err := syncer.LatestArchives(pg, from, to, importArchiveType)
-		if err != nil {
-			return err
-		}
-		if len(files) == 0 {
-			return fmt.Errorf("no downloaded archive files on disk in that range; run `fetch archive` first")
-		}
-		imported := 0
-		for _, f := range files {
-			key := syncer.ArchiveKey(f)
-			if !importForce {
-				done, err := pg.ImportRun.Imported(f.Id)
-				if err != nil {
-					return err
-				}
-				if done {
-					fmt.Printf("%-16s skipped (already imported)\n", key)
-					continue
-				}
-			}
-			start := time.Now()
-			res, err := syncer.ImportArchiveFile(pg, config.ServiceRoot(), f)
+		return writeLocked(pg, func() error { return importArchives(pg, from, to) })
+	},
+}
+
+// importArchives imports the downloaded archive files in the range that aren't
+// imported yet, then vacuums rating if anything changed.
+func importArchives(pg *dao.PGDB, from, to time.Time) error {
+	files, err := syncer.LatestArchives(pg, from, to, importArchiveType)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("no downloaded archive files on disk in that range; run `fetch archive` first")
+	}
+	imported := 0
+	for _, f := range files {
+		key := syncer.ArchiveKey(f)
+		if !importForce {
+			done, err := pg.ImportRun.Imported(f.Id)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("%-16s %7d players, %d new or changed, %d dropped, in %s\n",
-				key, res.Players, res.Updated, res.Removed, time.Since(start).Round(100*time.Millisecond))
-			imported++
-		}
-		if imported > 0 {
-			start := time.Now()
-			if err := pg.VacuumRating(); err != nil {
-				return fmt.Errorf("vacuum rating: %w", err)
+			if done {
+				fmt.Printf("%-16s skipped (already imported)\n", key)
+				continue
 			}
-			fmt.Printf("vacuumed rating in %s\n", time.Since(start).Round(100*time.Millisecond))
 		}
-		return nil
-	},
+		start := time.Now()
+		res, err := syncer.ImportArchiveFile(pg, config.ServiceRoot(), f)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%-16s %7d players, %d new or changed, %d dropped, in %s\n",
+			key, res.Players, res.Updated, res.Removed, time.Since(start).Round(100*time.Millisecond))
+		imported++
+	}
+	if imported > 0 {
+		start := time.Now()
+		if err := pg.VacuumRating(); err != nil {
+			return fmt.Errorf("vacuum rating: %w", err)
+		}
+		fmt.Printf("vacuumed rating in %s\n", time.Since(start).Round(100*time.Millisecond))
+	}
+	return nil
 }
 
 // monthRange parses --from/--to as months; --to defaults to this month.

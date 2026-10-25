@@ -28,10 +28,6 @@ var syncCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if s.AlreadyRunning {
-			fmt.Println("another sync is running (the service's scheduler?); nothing done")
-			return nil
-		}
 		if s.Failed {
 			return errors.New("sync finished with failures (see above)")
 		}
