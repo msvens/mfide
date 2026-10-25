@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,16 +43,18 @@ const syncShutdownWait = 10 * time.Second
 
 // StartMServer runs the HTTP server until SIGINT/SIGTERM.
 func StartMServer() {
-	zl, err := zap.NewDevelopment()
+	// The logger is configured, so config comes first and its errors go to stderr.
+	if err := config.InitConfig(); err != nil {
+		fmt.Fprintln(os.Stderr, "could not init config:", err)
+		os.Exit(1)
+	}
+	zl, err := newLogger(config.LogFormat(), config.LogLevel())
 	if err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, "invalid config:", err)
+		os.Exit(1)
 	}
 	defer func() { _ = zl.Sync() }()
 	l := zl.Sugar()
-
-	if err := config.InitConfig(); err != nil {
-		l.Fatalw("could not init config", zap.Error(err))
-	}
 
 	pg, err := dao.NewPGDB()
 	if err != nil {

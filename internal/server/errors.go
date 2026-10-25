@@ -47,7 +47,8 @@ func ServiceUnavailableError(message string) *ApiError {
 }
 
 // ResolveError maps any error to an ApiError: ApiErrors pass through,
-// sql.ErrNoRows becomes 404, anything else 500.
+// sql.ErrNoRows becomes 404, anything else a 500 whose text stays out of the
+// response (response logs it).
 func ResolveError(err error) *ApiError {
 	var apiErr *ApiError
 	switch {
@@ -56,6 +57,6 @@ func ResolveError(err error) *ApiError {
 	case errors.Is(err, sql.ErrNoRows):
 		return NotFoundError("not found")
 	default:
-		return InternalError(err.Error())
+		return InternalError("internal server error")
 	}
 }

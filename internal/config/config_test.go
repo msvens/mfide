@@ -28,6 +28,8 @@ func TestConfigExample(t *testing.T) {
 		{"retention.currentFiles", RetentionCurrentFiles(), 2},
 		{"retention.removedPlayersDays", RetentionRemovedPlayersDays(), 90},
 		{"retention.historyMonths", RetentionHistoryMonths(), 60},
+		{"log.format", LogFormat(), "console"},
+		{"log.level", LogLevel(), "info"},
 		{"db.host", DbHost(), "localhost"},
 		{"db.port", DbPort(), 5432},
 		{"db.user", DbUser(), "user"},

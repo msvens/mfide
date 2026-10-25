@@ -34,6 +34,7 @@ every key; the ones that matter on a server:
 | `retention.historyMonths` | `60` | Months of ratings kept; `0` keeps everything |
 | `api.defaultRatePerMin` | `1000` | Default limit for new keys |
 | `api.ipRatePerMin` | `60` | Requests without a valid key, per client IP |
+| `log.format` / `log.level` | `console` / `info` | `json` for log shipping; `debug` also logs `/health` polls |
 
 ## Behind nginx
 
@@ -56,7 +57,9 @@ An unreachable database comes back as HTTP 200 with an `{error}` body (code 503)
 the body, not just the status. Worth alerting on: `lastSync.ok` false, or `lastSync.finishedAt`
 older than ~2 days (the sync isn't running).
 
-Logs go to stderr (zap's development format for now).
+Logs go to stderr (journald under systemd): one `request` line per API request (method,
+path, status, ms, key name, client IP) and the sync's progress. Unexpected errors are logged
+at `ERROR` with the real cause; clients only see "internal server error".
 
 ## First-time setup
 

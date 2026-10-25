@@ -21,6 +21,10 @@ retention:
   removedPlayersDays: 90 #players gone from FIDE's list longer than this are deleted, with their history
   historyMonths: 60 #months of ratings kept, counting the current month; 0 = keep everything
 
+log:
+  format: console #console or json (for log shipping); to stderr
+  level: info #debug, info, warn or error; debug also logs /health requests
+
 service:
   root: .server #default; downloaded FIDE lists etc. go under here
 
