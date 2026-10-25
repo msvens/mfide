@@ -20,7 +20,7 @@ FIDE-permission and GDPR items that must be settled before any public launch.
 - Check the DB connection: `go run . db check`
 - Create/migrate the schema: `go run . db upgrade` · show versions: `go run . db version`
   (the server refuses to start on a schema mismatch)
-- API keys: `go run . key create --name <who> [--rate N]` (prints the key once) · `key list` ·
+- API keys: `go run . key create --name <who> [--rate N]` (prints the key once) · `key list [--all]` (`--all` includes revoked) ·
   `key revoke <id>`
 - Download FIDE files: `go run . fetch current` · `fetch archive --from 2026-09 [--type]` ·
   `fetch list` (into `service.root/downloads/`, recorded in `source_file`)

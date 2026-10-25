@@ -18,8 +18,9 @@ var keyCmd = &cobra.Command{
 }
 
 var (
-	keyName string
-	keyRate int
+	keyName    string
+	keyRate    int
+	keyListAll bool
 )
 
 var keyCreateCmd = &cobra.Command{
@@ -47,7 +48,7 @@ var keyCreateCmd = &cobra.Command{
 
 var keyListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List API keys",
+	Short: "List active API keys (--all includes revoked ones)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pg, err := openDB()
 		if err != nil {
@@ -60,11 +61,22 @@ var keyListCmd = &cobra.Command{
 		}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		_, _ = fmt.Fprintln(w, "ID\tNAME\tPREFIX\tRATE/MIN\tCREATED\tLAST USED\tREVOKED")
+		hidden := 0
 		for _, k := range keys {
+			if k.RevokedAt != nil && !keyListAll {
+				hidden++
+				continue
+			}
 			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%d\t%s\t%s\t%s\n", k.Id, k.Name, k.Prefix, k.RatePerMin,
 				k.CreatedAt.Format(time.DateTime), fmtTime(k.LastUsedAt), fmtTime(k.RevokedAt))
 		}
-		return w.Flush()
+		if err := w.Flush(); err != nil {
+			return err
+		}
+		if hidden > 0 {
+			fmt.Printf("\n%d revoked keys not shown (--all shows them).\n", hidden)
+		}
+		return nil
 	},
 }
 
@@ -110,6 +122,7 @@ func init() {
 	keyCreateCmd.Flags().StringVar(&keyName, "name", "", "who or what the key is for (required)")
 	keyCreateCmd.Flags().IntVar(&keyRate, "rate", 0, "requests per minute (default api.defaultRatePerMin)")
 	_ = keyCreateCmd.MarkFlagRequired("name")
+	keyListCmd.Flags().BoolVar(&keyListAll, "all", false, "include revoked keys")
 	keyCmd.AddCommand(keyCreateCmd, keyListCmd, keyRevokeCmd)
 	rootCmd.AddCommand(keyCmd)
 }
