@@ -27,6 +27,7 @@ type mserver struct {
 	auth       *auth
 	players    playerStore
 	r          *http.ServeMux
+	patterns   []string // registered GET routes, without the prefix
 	l          *zap.SugaredLogger
 	prefixPath string
 }

@@ -50,7 +50,7 @@ every key; the ones that matter on a server:
 `GET /api/health` is public and cheap:
 
 ```json
-{"data":{"status":"ok","db":"ok","ratingsMonth":"2026-10","lastImport":"2026-10-24T03:00:27+02:00","lastSync":{"finishedAt":"2026-10-24T03:00:41+02:00","ok":true}}}
+{"data":{"status":"ok","db":"ok","apiVersion":"1.0.0","build":"e89b368a1c2d","ratingsMonth":"2026-10","lastImport":"2026-10-24T03:00:27+02:00","lastSync":{"finishedAt":"2026-10-24T03:00:41+02:00","ok":true}}}
 ```
 
 An unreachable database comes back as HTTP 200 with an `{error}` body (code 503), so check
@@ -80,6 +80,10 @@ The service stops cleanly on SIGTERM. A sync in progress gets up to 10 s to reac
 boundary; an import cut short rolls back and the next start catches up.
 
 ## Upgrading
+
+Deploy a release tag (`git checkout v1.2.0 && go build -o mfide .`): Go stamps the git
+revision into the binary, and `/api/health` shows it as `build` next to `apiVersion`, so you
+can see what's running. Releases are made with `make release` (see CLAUDE.md).
 
 The server refuses to start against a database whose schema version doesn't match the
 binary, so a schema change always goes:

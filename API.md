@@ -4,13 +4,21 @@ FIDE rating data from FIDE's official downloadable rating lists: player profiles
 ratings, monthly rating history and top lists. The data is refreshed from FIDE once a day;
 ratings change once a month.
 
-Base URL: `https://<host>/api`. All data endpoints are versioned under `/v1`.
+This is the guide: how things behave and why. The exact contract (every endpoint, parameter,
+default, limit and response field) is the OpenAPI 3.1 document:
+
+- in the repo: [`api/openapi.json`](api/openapi.json)
+- from a running server: `GET /api/openapi.json` (no key needed). It is byte for byte the repo
+  file of the deployed version; `/api/health` reports its version as `apiVersion`.
+
+Base URL: `https://<host>/api`. Data endpoints are versioned under `/v1`.
 
 ## Basics
 
 ### Keys
 
-Every endpoint except `/health` needs an API key in the `X-API-Key` header:
+Every endpoint except `/health` and `/openapi.json` needs an API key in the `X-API-Key`
+header:
 
 ```sh
 curl -H "X-API-Key: mfide_…" https://<host>/api/v1/players/1503014
@@ -35,110 +43,57 @@ Every response is JSON with either `data` or `error`:
 The HTTP status is **200** for everything, including errors; the real status is
 `error.code` (400 bad parameter, 404 not found, 500 server error, 503 database unreachable).
 Two exceptions also use the real HTTP status, so proxies and retry logic can act on them:
-
-| Status | When | Body |
-| --- | --- | --- |
-| 401 | Missing, unknown or revoked key | `{"error":{"code":401,"message":"missing or invalid API key"}}` |
-| 429 | Rate limit exceeded | `{"error":{"code":429,…}}` plus a `Retry-After` header (seconds) |
+**401** (missing, unknown or revoked key) and **429** (rate limit exceeded, with a
+`Retry-After` header in seconds).
 
 ## Endpoints
 
 | Endpoint | What |
 | --- | --- |
-| [`GET /health`](#get-health) | Service status and data freshness (no key) |
-| [`GET /key`](#get-key) | Your key's name and limit |
-| [`GET /v1/players/search`](#get-v1playerssearch) | Find players by name or FIDE id |
-| [`GET /v1/players/{fideid}`](#get-v1playersfideid) | One player with current ratings |
-| [`GET /v1/players/{fideid}/history`](#get-v1playersfideidhistory) | A player's monthly ratings |
-| [`GET /v1/top`](#get-v1top) | Top lists, world or per federation |
+| `GET /health` | Service status, data freshness and versions (no key) |
+| `GET /openapi.json` | The OpenAPI document (no key) |
+| `GET /key` | Your key's name and limit |
+| `GET /v1/players/search` | Find players by name or FIDE id |
+| `GET /v1/players/{fideid}` | One player with current ratings |
+| `GET /v1/players/{fideid}/history` | A player's monthly ratings |
+| `GET /v1/top` | Top lists, world or per federation |
 
-### The player object
+### Players and ratings
 
-Search, player and top-list responses share it:
+Search, player and top-list responses share one player object (`Player` in the spec). Things
+worth knowing:
 
-```json
-{
-  "fideId": 1503014,
-  "name": "Carlsen, Magnus",
-  "country": "NOR",
-  "sex": "M",
-  "title": "GM",
-  "womenTitle": "",
-  "otherTitles": [],
-  "foaTitle": "",
-  "birthYear": 1990,
-  "standard": {"rating": 2823, "games": 0, "k": 10, "active": true},
-  "rapid": {"rating": 2801, "games": 12, "k": 10, "active": true},
-  "blitz": {"rating": 2860, "games": 0, "k": 10, "active": true}
-}
-```
+- `name` is exactly as FIDE spells it; see [Names](#names).
+- A rating type the player is unrated in is **`null`**, not 0.
+- `active` is FIDE's activity flag **per rating type**: a player can be inactive in standard and
+  active in rapid.
+- `birthYear` is null for about 2% of players.
+- "Current" ratings are the latest month for which all three rating types are published. On
+  the 1st of a month the previous month stays current until FIDE has published all three
+  lists.
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `fideId` | number | FIDE id |
-| `name` | string | Exactly as FIDE spells it; see [Names](#names) |
-| `country` | string | Three-letter FIDE federation code (`SWE`, `NOR`, `FID` …) |
-| `sex` | string | `M` or `F` |
-| `title` | string | `GM` `IM` `FM` `CM` `WGM` `WIM` `WFM` `WCM`, or `""` |
-| `womenTitle` | string | `WGM` `WIM` `WFM` `WCM` held alongside `title`, or `""` |
-| `otherTitles` | string[] | Arbiter, trainer and organizer titles (`IA` `FA` `NA` `FT` `FI` `FST` `DI` `IO` `AO` `SI` `NI` `LSI` `SLI`) |
-| `foaTitle` | string | FIDE Online Arena title (`AGM` `AIM` `AFM` `ACM` …), or `""` |
-| `birthYear` | number \| null | Null for ~2% of players |
-| `standard`, `rapid`, `blitz` | object \| null | Current rating per type; **null when unrated** in that type |
+### Health
 
-A rating object:
+For monitoring: alert on `lastSync.ok` false, or `lastSync.finishedAt` older than about two
+days (the daily sync isn't running). `ratingsMonth` is the current month, `apiVersion` the
+OpenAPI document's version and `build` the git revision the server was built from. If the
+database is unreachable the body is an error with code 503 (HTTP status still 200).
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `rating` | number | |
-| `games` | number | Rated games in that month's list |
-| `k` | number | K-factor |
-| `active` | boolean | FIDE's activity flag, **per rating type**: a player can be inactive in standard and active in rapid |
+### Search
 
-"Current" ratings are the latest month for which all three rating types are published. On the
-1st of a month the previous month stays current until FIDE has published all three lists.
-
-### GET /health
-
-No key needed. For monitoring.
-
-```json
-{"data":{"status":"ok","db":"ok","ratingsMonth":"2026-10","lastImport":"2026-10-24T10:26:13+02:00","lastSync":{"finishedAt":"2026-10-24T10:29:22+02:00","ok":true}}}
-```
-
-`ratingsMonth` is the current month, `lastImport` the latest file import, `lastSync` the
-latest daily sync. If the database is unreachable the body is an error with code 503 (HTTP
-status still 200).
-
-### GET /key
-
-```json
-{"data":{"name":"chess-app","prefix":"Cr5RoHcu","ratePerMin":1000}}
-```
-
-### GET /v1/players/search
-
-Finds current players by name, or by FIDE id.
-
-| Param | Default | Notes |
-| --- | --- | --- |
-| `q` | (required) | Words of the name, in any order. Digits only = a FIDE id (below) |
-| `match` | `prefix` | `prefix`: every word must start a word of the name. `word`: every word must be a whole word of the name |
-| `country` | | Only this federation (`SWE`) |
-| `limit` | 20 | 1–100 |
-
-Returns a list of [player objects](#the-player-object), best match first.
+`GET /v1/players/search?q=…` finds current players by name, or by FIDE id. Optional:
+`match`, `country`, `limit`.
 
 **Matching.** Words match in any order: "magnus carlsen" and "carlsen magnus" both find
 "Carlsen, Magnus". Accents are folded the way FIDE spells names (ASCII only): "Stål" finds
 "Stal", and ä/ö/ü/ø match both spellings ("Müller" finds both "Muller" and "Mueller").
-Punctuation is ignored. At most 5 words and 100 characters; at least one word must have two
-or more letters.
+Punctuation is ignored. At least one word must have two or more letters.
 
-**Order.** With `match=prefix`, names where the *earlier* words match a whole word come first,
-then the highest rating (best of standard, rapid, blitz), then name. The last word is assumed
-to be still being typed, so it never counts as whole: "carls" finds Carlsen (2860) before
-"Carls, Stefan". With `match=word`, results are ordered by rating.
+**`match=prefix`** (default) is for search-as-you-type: every word must start a word of the
+name. Names where the *earlier* words match a whole word come first, then the highest rating
+(best of standard, rapid, blitz), then name. The last word is assumed to be still being typed,
+so it never counts as whole: "carls" finds Carlsen (2860) before "Carls, Stefan".
+**`match=word`**: every word must be a whole word of the name, ordered by rating.
 
 | Query | `match=prefix` (default) | `match=word` |
 | --- | --- | --- |
@@ -150,51 +105,26 @@ to be still being typed, so it never counts as whole: "carls" finds Carlsen (286
 list, or an empty list if there's no such current player (or they're not in `country`). Names
 are not searched.
 
-**Type-ahead.** `match=prefix` is designed for search-as-you-type. Debounce keystrokes (~200
-ms) and start at three letters: most queries take a few milliseconds, but a two-letter prefix
-common in names (`ma`, `de`, `al`) matches ~200k players and can take ~0.3 s. Two-letter
-words still work (Chinese surnames like `Yu`, `Li`).
+**Type-ahead.** Debounce keystrokes (~200 ms) and start at three letters: most queries take a
+few milliseconds, but a two-letter prefix common in names (`ma`, `de`, `al`) matches ~200k
+players and can take ~0.3 s. Two-letter words still work (Chinese surnames like `Yu`, `Li`).
 
-### GET /v1/players/{fideid}
+### Player and history
 
-One current [player object](#the-player-object). Unknown players, and players FIDE has removed
+`GET /v1/players/{fideid}` is one current player. Unknown players, and players FIDE has removed
 from its list, are a 404 (`"player not found"`).
 
-### GET /v1/players/{fideid}/history
+`GET /v1/players/{fideid}/history` is the player's monthly ratings, oldest first, one entry per
+month (`period` is `YYYY-MM`); a type is null in months the player wasn't rated in it. With
+`type`, only that type and only the months it was rated in. History goes back up to 60 months
+(the operator's retention setting). Profile fields (name, federation, titles) are not
+historized: they are always today's.
 
-The player's monthly ratings, oldest first.
+### Top lists
 
-| Param | Default | Notes |
-| --- | --- | --- |
-| `type` | (all) | `standard`, `rapid` or `blitz`: only that type, and only months it was rated in |
-
-```json
-{"data":[
-  {"period":"2026-09","standard":null,"rapid":{"rating":2803,"games":0,"k":10,"active":true},"blitz":null},
-  {"period":"2026-10","standard":null,"rapid":{"rating":2801,"games":12,"k":10,"active":true},"blitz":null}
-]}
-```
-
-`period` is `YYYY-MM`. A type is null in months the player wasn't rated in it. History goes
-back up to 60 months (the operator's retention setting); profile fields (name, federation, titles) are not historized. A 404
-works as for the player.
-
-### GET /v1/top
-
-A top list for the current month, in FIDE's order.
-
-| Param | Default | Notes |
-| --- | --- | --- |
-| `type` | `standard` | `standard`, `rapid` or `blitz` |
-| `list` | `open` | `open`, `women`, `juniors` (born in the last 20 years: year − 20 or later), `girls` |
-| `country` | | One federation's list (`SWE`); world list without |
-| `limit` | 100 | 1–500 |
-
-Each entry is a [player object](#the-player-object) plus `rank` (1-based):
-
-```json
-{"data":[{"rank":1,"fideId":1700030,"name":"Cramling, Pia","country":"SWE","sex":"F","title":"GM",…}]}
-```
+`GET /v1/top` is a top list for the current month, in FIDE's order. Choose the rating `type`,
+the `list` (open, women, juniors, girls; juniors and girls are born in the last 20 years), a
+federation with `country` (world list without) and `limit`. Each entry is a player plus `rank`.
 
 Rules (checked against FIDE's own top lists): players rated in that type and active in that
 type, ordered by rating, then games played that month, then name. Ties share no rank;
