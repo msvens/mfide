@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 type fakePlayers struct {
 	players     []dao.PlayerWithRatings
 	lastTerms   [][]string
+	lastWhole   bool
 	lastCountry string
 	lastLimit   int
 	lastTop     dao.TopQuery
@@ -32,8 +34,8 @@ func (f *fakePlayers) Get(id int) (*dao.PlayerWithRatings, error) {
 	return nil, sql.ErrNoRows
 }
 
-func (f *fakePlayers) Search(terms [][]string, country string, limit int) ([]dao.PlayerWithRatings, error) {
-	f.lastTerms, f.lastCountry, f.lastLimit = terms, country, limit
+func (f *fakePlayers) Search(terms [][]string, wholeWords bool, country string, limit int) ([]dao.PlayerWithRatings, error) {
+	f.lastTerms, f.lastWhole, f.lastCountry, f.lastLimit = terms, wholeWords, country, limit
 	return f.players, nil
 }
 
@@ -105,6 +107,9 @@ func TestPlayerJSON(t *testing.T) {
 	if code := getData(t, s, "/api/v1/players/123", &p); code != http.StatusNotFound {
 		t.Errorf("unknown player: code %d, want 404", code)
 	}
+	if body := get(s, "/api/v1/players/123", goodKey).Body.String(); !strings.Contains(body, `"player not found"`) {
+		t.Errorf("404 body = %s, want a message without database details", body)
+	}
 	if code := getData(t, s, "/api/v1/players/abc", &p); code != http.StatusBadRequest {
 		t.Errorf("non-numeric id: code %d, want 400", code)
 	}
@@ -116,14 +121,49 @@ func TestSearchHandler(t *testing.T) {
 	if code := getData(t, s, "/api/v1/players/search?q="+url.QueryEscape("Stål alvar")+"&country=swe&limit=5", &out); code != 0 {
 		t.Fatalf("error %d", code)
 	}
-	if !reflect.DeepEqual(fp.lastTerms, [][]string{{"stal"}, {"alvar"}}) || fp.lastCountry != "SWE" || fp.lastLimit != 5 {
+	if !reflect.DeepEqual(fp.lastTerms, [][]string{{"stal"}, {"alvar"}}) || fp.lastWhole || fp.lastCountry != "SWE" || fp.lastLimit != 5 {
 		t.Errorf("store got terms %v, country %q, limit %d", fp.lastTerms, fp.lastCountry, fp.lastLimit)
 	}
 	if len(out) != 2 || out[0].Name != "Stal, Alvar" {
 		t.Errorf("out %+v", out)
 	}
 
-	for _, q := range []string{"q=", "q=x", "q=stal&country=SWEDEN", "q=stal&limit=0", "q=stal&limit=101"} {
+	getData(t, s, "/api/v1/players/search?q=stal&match=word", &out)
+	if !fp.lastWhole {
+		t.Error("match=word should ask the store for whole words")
+	}
+
+	// Digits only: a FIDE id lookup, not a name search.
+	fp.lastTerms = nil
+	cases := []struct {
+		query string
+		want  []int
+	}{
+		{"q=1786644", []int{1786644}},
+		{"q=+1786644+", []int{1786644}},
+		{"q=1786644&country=SWE", []int{1786644}},
+		{"q=1786644&country=NOR", []int{}},
+		{"q=123", []int{}},
+		{"q=99999999999999999999", []int{}},
+	}
+	for _, c := range cases {
+		out = nil
+		if code := getData(t, s, "/api/v1/players/search?"+c.query, &out); code != 0 {
+			t.Fatalf("%s: error %d", c.query, code)
+		}
+		got := []int{}
+		for _, p := range out {
+			got = append(got, p.FideID)
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: got %v, want %v", c.query, got, c.want)
+		}
+	}
+	if fp.lastTerms != nil {
+		t.Errorf("an id lookup must not search names, store got %v", fp.lastTerms)
+	}
+
+	for _, q := range []string{"q=", "q=x", "q=stal&country=SWEDEN", "q=stal&limit=0", "q=stal&limit=101", "q=stal&match=fuzzy"} {
 		if code := getData(t, s, "/api/v1/players/search?"+q, &out); code != http.StatusBadRequest {
 			t.Errorf("%s: code %d, want 400", q, code)
 		}

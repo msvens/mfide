@@ -31,9 +31,8 @@ FIDE-permission and GDPR items that must be settled before any public launch.
 - Sync (fetch + import what FIDE changed, then retention): `go run . sync`. The service runs
   the same thing daily at `sync.at` (plus a catch-up at startup if the last successful sync is
   over a day old); `sync.enabled: false` turns the scheduler off, e.g. to use cron instead
-- Read API (keyed): `GET /api/v1/players/search?q=&country=&limit=` ·
-  `GET /api/v1/players/{fideid}` · `GET /api/v1/players/{fideid}/history?type=` ·
-  `GET /api/v1/top?type=&list=&country=&limit=`
+- Read API (keyed), params, response fields and how FIDE names look: `API.md`; keep it in sync
+  with endpoints, params and response fields
 - Deploying (requirements, config, first-time setup, upgrades): `DEPLOY.md`; keep it in sync
   with config keys and commands
 - DB tests need Postgres with role/db `mfide_test` (see `config_test.yaml`); they wipe that
@@ -68,9 +67,11 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   overwritten (a changed file gets a `.<sha8>` suffix). The current month's archive file is
   provisional until the month ends.
 - **Search:** FIDE names are pure ASCII, so queries are folded in Go (`server/search.go`;
-  ä/ö/ü/ø match both "o" and "oe") and matched as word prefixes on `player.name_norm` with a
-  pg_trgm index (the extension is created by migration 4; needs Postgres ≥ 13). Never fold or
-  rewrite the stored name.
+  ä/ö/ü/ø match both "o" and "oe") and matched as word prefixes (`match=word`: whole words) on
+  `player.name_norm` with a pg_trgm index (the extension is created by migration 4; needs
+  Postgres ≥ 13). Ranking: whole-word matches of all but the last word (still being typed),
+  then rating. A digits-only `q` is a FIDE-id lookup. Never fold or rewrite the stored name;
+  display help for names is documentation (API.md "Names"), not API fields.
 - **Two tables, no duplication:** `player` is the profile only (name, country, sex, titles,
   birth year), from the daily file; its ratings and flag are ignored (they're an exact copy of
   the current month's archive files). `rating` is the only place for rating numbers: one row per

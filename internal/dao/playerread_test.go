@@ -21,6 +21,7 @@ func readPlayers() []*Player {
 		{FideID: 9, Name: "Praggnanandhaa R", Country: "IND", Sex: "M", BirthYear: y(2005)},
 		{FideID: 11, Name: "Stalmach, Richard", Country: "CZE", Sex: "M", BirthYear: y(1970)},
 		{FideID: 12, Name: "Stal, Alvar", Country: "SWE", Sex: "M", BirthYear: y(2013)},
+		{FideID: 13, Name: "Stal, Rolf", Country: "SWE", Sex: "M", BirthYear: y(1950)}, // unrated
 	}
 }
 
@@ -72,22 +73,30 @@ func TestPlayerSearch(t *testing.T) {
 	cases := []struct {
 		name    string
 		terms   [][]string
+		whole   bool
 		country string
 		want    []int
 	}{
-		{"any order", [][]string{{"olle"}, {"svensson"}}, "", []int{1}},
-		{"word prefix, not substring", [][]string{{"olle"}}, "", []int{2, 1}}, // "Colle, Olle" matches on Olle, not on Colle
-		{"prefix of a later word", [][]string{{"svens"}, {"o"}}, "", []int{1}},
+		{"any order", [][]string{{"olle"}, {"svensson"}}, false, "", []int{1}},
+		{"word prefix, not substring", [][]string{{"olle"}}, false, "", []int{2, 1}}, // "Colle, Olle" matches on Olle, not on Colle
+		{"prefix of a later word", [][]string{{"svens"}, {"o"}}, false, "", []int{1}},
 		// Both Soderbergs have 2300; ties order by name: "Soderberg, Erik" < "Soederberg, Anna".
-		{"both umlaut spellings", [][]string{{"soderberg", "soederberg"}}, "", []int{4, 3}},
-		{"punctuation in the data", [][]string{{"boman"}, {"simon"}}, "", []int{5}},
-		{"no comma", [][]string{{"pragg"}}, "", []int{9}},
-		{"whole-word match before stronger prefix match", [][]string{{"stal"}}, "", []int{12, 11}},
-		{"prefix only, by current rating", [][]string{{"sta"}}, "", []int{11, 12}},
-		{"country filter", [][]string{{"soderberg", "soederberg"}}, "GER", []int{3}},
+		{"both umlaut spellings", [][]string{{"soderberg", "soederberg"}}, false, "", []int{4, 3}},
+		{"punctuation in the data", [][]string{{"boman"}, {"simon"}}, false, "", []int{5}},
+		{"no comma", [][]string{{"pragg"}}, false, "", []int{9}},
+		{"whole-word match before stronger prefix match", [][]string{{"alvar"}, {"stal"}}, false, "", []int{12}},
+		// "stal" is complete (not the last word): Stal, Rolf (unrated) before Stalmach, Richard (2456).
+		{"a complete word ranks first", [][]string{{"stal"}, {"r"}}, false, "", []int{13, 11}},
+		{"the last word is still being typed: by rating", [][]string{{"stal"}}, false, "", []int{11, 12, 13}},
+		{"prefix only, by current rating", [][]string{{"sta"}}, false, "", []int{11, 12, 13}},
+		{"country filter", [][]string{{"soderberg", "soederberg"}}, false, "GER", []int{3}},
+		{"whole words only", [][]string{{"olle"}}, true, "", []int{2, 1}},
+		{"whole words: a prefix is not enough", [][]string{{"svens"}, {"olle"}}, true, "", nil},
+		{"whole words: no substring of a longer word", [][]string{{"stal"}}, true, "", []int{12, 13}},
+		{"whole words: umlaut spellings still alternatives", [][]string{{"soderberg", "soederberg"}}, true, "", []int{4, 3}},
 	}
 	for _, c := range cases {
-		got, err := pg.Player.Search(c.terms, c.country, 20)
+		got, err := pg.Player.Search(c.terms, c.whole, c.country, 20)
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -102,7 +111,7 @@ func TestPlayerSearch(t *testing.T) {
 
 	// Removed players are not found, even though their rating rows remain.
 	importList(t, pg, sourceFile(t, pg), append(readPlayers()[1:], &Player{FideID: 10, Name: "Filler, One", Country: "SWE", Sex: "M"}))
-	if got, _ := pg.Player.Search([][]string{{"svensson"}}, "", 20); len(got) != 0 {
+	if got, _ := pg.Player.Search([][]string{{"svensson"}}, false, "", 20); len(got) != 0 {
 		t.Errorf("removed player found: %v", ids(got))
 	}
 	if _, err := pg.Player.Get(1); !errors.Is(err, sql.ErrNoRows) {

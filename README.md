@@ -14,4 +14,4 @@ go run .                                      # GET http://localhost:8051/api/he
 
 The service keeps itself up to date: every day at `sync.at` (default 03:00, local time) it
 fetches FIDE's files, imports what changed and applies the `retention` settings (see
-`config_example.yaml`). `go run . sync` does one such run by hand. Running it on a server: [DEPLOY.md](DEPLOY.md).
+`config_example.yaml`). `go run . sync` does one such run by hand. Running it on a server: [DEPLOY.md](DEPLOY.md). Using the API: [API.md](API.md).
