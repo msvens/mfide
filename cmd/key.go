@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -100,6 +103,20 @@ var keyRevokeCmd = &cobra.Command{
 		fmt.Printf("Revoked key %d.\n", id)
 		return nil
 	},
+}
+
+// writeLocked runs fn holding the write lock the service's sync also takes, so a
+// fetch or import never overlaps a sync or another fetch/import: it waits for
+// them. Ctrl-C interrupts the wait; once fn runs, Ctrl-C works as usual.
+func writeLocked(pg *dao.PGDB, fn func() error) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	unlock, err := pg.SyncLock(ctx, func() { fmt.Println("waiting: a sync or another fetch/import is running…") })
+	stop()
+	if err != nil {
+		return fmt.Errorf("write lock: %w", err)
+	}
+	defer unlock()
+	return fn()
 }
 
 func openDB() (*dao.PGDB, error) {

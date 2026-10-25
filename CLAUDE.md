@@ -110,9 +110,10 @@ FIDE-permission and GDPR items that must be settled before any public launch.
   than `retention.removedPlayersDays` with their ratings (plus ratings older than that of ids
   with no player row), cap `rating` at `retention.historyMonths`, prune downloads (archive zips
   once imported, all but the newest `retention.currentFiles` imported current lists; rows stay
-  with `deleted_at`), vacuum if `rating` changed. A Postgres advisory lock keeps runs from
-  overlapping; runs are recorded in `sync_run` and `/api/health` reports the last one. The
-  fetch/import commands share their code with sync.
+  with `deleted_at`), vacuum if `rating` changed. One Postgres advisory lock (`SyncLock`) is
+  shared by sync and the `fetch`/`import` commands (taken in the commands, not in the shared
+  code): whoever comes second waits (polling, Ctrl-C/shutdown aborts), so they can run any
+  time. Runs are recorded in `sync_run` and `/api/health` reports the last one.
 - **Large files:** FIDE's combined XML is ~858 MB unzipped. Rows flow zip → `xml.Decoder` →
   pgx `COPY` into a temp staging table, then SQL diffs into `player`, in one transaction. Never
   read the file or all rows into memory (the import peaks at ~25 MB). An import that would leave

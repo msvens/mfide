@@ -94,8 +94,6 @@ func runLogged(ctx context.Context, pg *dao.PGDB, o Options, l *zap.SugaredLogge
 		l.Info("sync: interrupted by shutdown; the next start catches up")
 	case err != nil:
 		l.Errorw("sync: stopped", zap.Error(err))
-	case s.AlreadyRunning:
-		l.Info("sync: another sync is running; skipped")
 	case s.Failed:
 		l.Warnw("sync: finished with failures", "took", since(start))
 	default:

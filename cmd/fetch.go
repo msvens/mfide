@@ -28,12 +28,14 @@ var fetchCurrentCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = pg.Close() }()
-		f := syncer.FetchCurrent(pg, syncer.OptionsFromConfig())
-		if f.Err != nil {
-			return f.Err
-		}
-		printOutcome(f.Name, f.Outcome, f.File)
-		return nil
+		return writeLocked(pg, func() error {
+			f := syncer.FetchCurrent(pg, syncer.OptionsFromConfig())
+			if f.Err != nil {
+				return f.Err
+			}
+			printOutcome(f.Name, f.Outcome, f.File)
+			return nil
+		})
 	},
 }
 
@@ -73,25 +75,27 @@ var fetchArchiveCmd = &cobra.Command{
 		for p := from; !p.After(to); p = p.AddDate(0, 1, 0) {
 			months = append(months, p)
 		}
-		var failed []string
-		err = syncer.FetchArchive(context.Background(), pg, o, months, types, archiveRecheck, func(f syncer.Fetched) {
-			switch {
-			case f.Skipped:
-				fmt.Printf("%-28s skipped (already have it)\n", f.Name)
-			case f.Err != nil:
-				fmt.Printf("%-28s FAILED: %v\n", f.Name, f.Err)
-				failed = append(failed, f.Name)
-			default:
-				printOutcome(f.Name, f.Outcome, f.File)
+		return writeLocked(pg, func() error {
+			var failed []string
+			err := syncer.FetchArchive(context.Background(), pg, o, months, types, archiveRecheck, func(f syncer.Fetched) {
+				switch {
+				case f.Skipped:
+					fmt.Printf("%-28s skipped (already have it)\n", f.Name)
+				case f.Err != nil:
+					fmt.Printf("%-28s FAILED: %v\n", f.Name, f.Err)
+					failed = append(failed, f.Name)
+				default:
+					printOutcome(f.Name, f.Outcome, f.File)
+				}
+			})
+			if err != nil {
+				return err
 			}
+			if len(failed) > 0 {
+				return fmt.Errorf("%d file(s) failed: %v", len(failed), failed)
+			}
+			return nil
 		})
-		if err != nil {
-			return err
-		}
-		if len(failed) > 0 {
-			return fmt.Errorf("%d file(s) failed: %v", len(failed), failed)
-		}
-		return nil
 	},
 }
 

@@ -78,28 +78,49 @@ func (pg *PGDB) CapHistory(keepMonths int) (int, error) {
 	return int(n), err
 }
 
-// syncLockKey is the advisory lock that keeps sync runs (the service's scheduler,
-// `mfide sync`, a second instance) from overlapping. Any constant works; this is
-// "mfide" in ASCII.
+// syncLockKey is the advisory lock that keeps everything that writes FIDE data
+// (the service's sync, `mfide sync`, `fetch`, `import`, a second instance) from
+// overlapping. Any constant works; this is "mfide" in ASCII.
 const syncLockKey = 0x6d66696465
 
-// SyncLock takes the sync lock without waiting. ok is false if another run holds
-// it. The lock belongs to one connection, held until unlock is called (or the
-// process dies, which releases it too).
-func (pg *PGDB) SyncLock(ctx context.Context) (unlock func(), ok bool, err error) {
+// SyncLock takes the write lock, waiting while another process holds it; then it
+// calls waiting first, so the caller can say why it's paused. Cancelling ctx stops
+// the wait. The lock belongs to one connection, held until unlock is called (or
+// the process dies, which releases it too).
+func (pg *PGDB) SyncLock(ctx context.Context, waiting func()) (unlock func(), err error) {
 	conn, err := pg.db.Connx(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	if err := conn.GetContext(ctx, &ok, "SELECT pg_try_advisory_lock($1)", syncLockKey); err != nil || !ok {
-		_ = conn.Close()
-		return nil, false, err
+	// Polls rather than blocking in pg_advisory_lock: a cancelled blocking call
+	// leaves the server-side wait queued, and it would briefly grab the lock later.
+	for first := true; ; first = false {
+		var ok bool
+		if err := conn.GetContext(ctx, &ok, "SELECT pg_try_advisory_lock($1)", syncLockKey); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		if ok {
+			break
+		}
+		if first && waiting != nil {
+			waiting()
+		}
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+			return nil, ctx.Err()
+		case <-time.After(syncLockPoll):
+		}
 	}
 	return func() {
 		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", syncLockKey)
 		_ = conn.Close()
-	}, true, nil
+	}, nil
 }
+
+// syncLockPoll is how often a waiting SyncLock retries.
+const syncLockPoll = time.Second
 
 // schemaSyncRun records sync runs, so the service knows when it last synced
 // (catch-up after downtime) and /health can report it.

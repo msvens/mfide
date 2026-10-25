@@ -13,9 +13,8 @@ import (
 
 // Summary is what a sync run did, one line per step.
 type Summary struct {
-	Lines          []string
-	Failed         bool // a step failed; the others still ran
-	AlreadyRunning bool // another run holds the lock; nothing was done
+	Lines  []string
+	Failed bool // a step failed; the others still ran
 }
 
 // run is one sync in progress.
@@ -44,13 +43,12 @@ func (r *run) fail(format string, args ...any) {
 // retention rules. report gets each summary line as it happens. Step failures
 // are in the summary (Failed) and the later steps still run; the error is for
 // ctx being cancelled (the step in progress finishes or rolls back) or the lock.
+// A run waits for another sync, fetch or import to finish; what that one already
+// did is then skipped.
 func Run(ctx context.Context, pg *dao.PGDB, o Options, report func(string)) (*Summary, error) {
-	unlock, ok, err := pg.SyncLock(ctx)
+	unlock, err := pg.SyncLock(ctx, func() { report("waiting for another sync, fetch or import to finish") })
 	if err != nil {
 		return nil, fmt.Errorf("sync lock: %w", err)
-	}
-	if !ok {
-		return &Summary{AlreadyRunning: true}, nil
 	}
 	defer unlock()
 	id, err := pg.SyncRun.Start()
@@ -65,7 +63,7 @@ func Run(ctx context.Context, pg *dao.PGDB, o Options, report func(string)) (*Su
 		}
 		step()
 	}
-	ok = err == nil && !r.s.Failed
+	ok := err == nil && !r.s.Failed
 	if ferr := pg.SyncRun.Finish(id, ok, strings.Join(r.s.Lines, "\n")); ferr != nil && err == nil {
 		err = ferr
 	}

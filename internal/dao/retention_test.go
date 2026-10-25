@@ -131,19 +131,45 @@ func TestCapHistory(t *testing.T) {
 func TestSyncLockAndRuns(t *testing.T) {
 	pg := openUpgradedTestDB(t)
 	ctx := context.Background()
-	unlock, ok, err := pg.SyncLock(ctx)
-	if err != nil || !ok {
-		t.Fatalf("first lock = (%v, %v)", ok, err)
+	unlock, err := pg.SyncLock(ctx, func() { t.Error("free lock: shouldn't wait") })
+	if err != nil {
+		t.Fatalf("first lock: %v", err)
 	}
-	if _, ok, err := pg.SyncLock(ctx); err != nil || ok {
-		t.Errorf("second lock while held = (%v, %v), want not ok", ok, err)
+
+	// A second taker waits until the first unlocks.
+	waiting := make(chan struct{})
+	got := make(chan func())
+	go func() {
+		u, err := pg.SyncLock(ctx, func() { close(waiting) })
+		if err != nil {
+			t.Errorf("second lock: %v", err)
+		}
+		got <- u
+	}()
+	<-waiting
+	select {
+	case <-got:
+		t.Fatal("second lock granted while the first is held")
+	case <-time.After(200 * time.Millisecond):
 	}
 	unlock()
-	unlock2, ok, err := pg.SyncLock(ctx)
-	if err != nil || !ok {
-		t.Fatalf("lock after unlock = (%v, %v)", ok, err)
+	unlock2 := <-got
+	if unlock2 == nil {
+		t.Fatal("second lock not granted after unlock")
+	}
+
+	// A waiter whose context ends gives up without the lock.
+	cctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	if _, err := pg.SyncLock(cctx, nil); err == nil {
+		t.Error("lock with an expired context should fail while held")
 	}
 	unlock2()
+	unlock3, err := pg.SyncLock(ctx, func() { t.Error("lock is free again: shouldn't wait") })
+	if err != nil {
+		t.Fatalf("lock after the cancelled waiter: %v", err)
+	}
+	unlock3()
 
 	if r, err := pg.SyncRun.Last(); err != nil || r != nil {
 		t.Errorf("no runs: (%+v, %v)", r, err)

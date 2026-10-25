@@ -76,6 +76,10 @@ at `ERROR` with the real cause; clients only see "internal server error".
 Pick `--from` as six months back from the current month. After that the service's daily sync
 keeps everything current: new monthly lists, profile changes, pruning and retention.
 
+`fetch` and `import` share a lock with the service's sync, so they can be run any time, also
+while the service is up (e.g. to backfill older months later): whichever comes second waits
+for the other to finish.
+
 The service stops cleanly on SIGTERM. A sync in progress gets up to 10 s to reach a step
 boundary; an import cut short rolls back and the next start catches up.
 
