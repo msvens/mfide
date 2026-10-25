@@ -54,7 +54,7 @@ func ResolveError(err error) *ApiError {
 	case errors.As(err, &apiErr):
 		return apiErr
 	case errors.Is(err, sql.ErrNoRows):
-		return NotFoundError(err.Error())
+		return NotFoundError("not found")
 	default:
 		return InternalError(err.Error())
 	}

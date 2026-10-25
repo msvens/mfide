@@ -1,6 +1,8 @@
 package server
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"regexp"
 	"slices"
@@ -14,7 +16,7 @@ import (
 // playerStore is the part of dao.PlayerDAO the handlers need; tests fake it.
 type playerStore interface {
 	Get(fideid int) (*dao.PlayerWithRatings, error)
-	Search(terms [][]string, country string, limit int) ([]dao.PlayerWithRatings, error)
+	Search(terms [][]string, wholeWords bool, country string, limit int) ([]dao.PlayerWithRatings, error)
 	Top(q dao.TopQuery) ([]dao.PlayerWithRatings, error)
 	History(fideid int) ([]dao.RatingMonth, error)
 }
@@ -96,11 +98,13 @@ func limitParam(r *http.Request, def, max int) (int, error) {
 	return n, nil
 }
 
+var digitsOnly = regexp.MustCompile(`^[0-9]+$`)
+
+// handleSearch finds players by name. Words match as word prefixes by default,
+// for type-ahead; match=word wants whole words. A query of digits only is a
+// FIDE id: that player, or an empty list.
 func (s *mserver) handleSearch(r *http.Request) (any, error) {
-	terms, err := searchTerms(r.URL.Query().Get("q"))
-	if err != nil {
-		return nil, err
-	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	country, err := countryParam(r)
 	if err != nil {
 		return nil, err
@@ -109,7 +113,22 @@ func (s *mserver) handleSearch(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	players, err := s.players.Search(terms, country, limit)
+	var wholeWords bool
+	switch m := r.URL.Query().Get("match"); m {
+	case "", "prefix":
+	case "word":
+		wholeWords = true
+	default:
+		return nil, BadRequestError("match must be prefix or word")
+	}
+	if digitsOnly.MatchString(q) {
+		return s.searchID(q, country)
+	}
+	terms, err := searchTerms(q)
+	if err != nil {
+		return nil, err
+	}
+	players, err := s.players.Search(terms, wholeWords, country, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -120,16 +139,46 @@ func (s *mserver) handleSearch(r *http.Request) (any, error) {
 	return out, nil
 }
 
+// searchID is a search for a FIDE id: a list of that player, or an empty one if
+// the id is unknown or the player isn't in country.
+func (s *mserver) searchID(q, country string) (any, error) {
+	out := []playerJSON{}
+	id, err := strconv.Atoi(q)
+	if err != nil || id <= 0 {
+		return out, nil // too many digits for an id
+	}
+	p, err := s.players.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if country == "" || p.Country == country {
+		out = append(out, toJSON(p))
+	}
+	return out, nil
+}
+
 func (s *mserver) handlePlayer(r *http.Request) (any, error) {
 	id, err := strconv.Atoi(Var(r, "fideid"))
 	if err != nil || id <= 0 {
 		return nil, BadRequestError("fideid must be a positive number")
 	}
-	p, err := s.players.Get(id)
+	p, err := s.getPlayer(id)
 	if err != nil {
-		return nil, err // sql.ErrNoRows becomes 404
+		return nil, err
 	}
 	return toJSON(p), nil
+}
+
+// getPlayer is players.Get with a 404 that doesn't leak the database error.
+func (s *mserver) getPlayer(id int) (*dao.PlayerWithRatings, error) {
+	p, err := s.players.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, NotFoundError("player not found")
+	}
+	return p, err
 }
 
 type monthJSON struct {
@@ -152,7 +201,7 @@ func (s *mserver) handleHistory(r *http.Request) (any, error) {
 		return nil, BadRequestError("type must be standard, rapid or blitz")
 	}
 	// Same visibility as the player card: unknown or removed players are 404.
-	if _, err := s.players.Get(id); err != nil {
+	if _, err := s.getPlayer(id); err != nil {
 		return nil, err
 	}
 	months, err := s.players.History(id)

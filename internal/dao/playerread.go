@@ -117,10 +117,13 @@ type PlayerDAO interface {
 	// Get returns a current (not removed) player with current ratings, or sql.ErrNoRows.
 	Get(fideid int) (*PlayerWithRatings, error)
 	// Search returns current players whose name has, for every term, a word
-	// starting with one of the term's alternatives (any order). Names where more
-	// terms match a whole word come first ("stal" ranks "Stal, Alvar" above
-	// "Stalmach, Richard"), then the strongest players.
-	Search(terms [][]string, country string, limit int) ([]PlayerWithRatings, error)
+	// starting with one of the term's alternatives (any order), or with
+	// wholeWords a word equal to one. Names where more terms match a whole word
+	// come first ("alvar stal" ranks "Stal, Alvar" above "Stalmach, Richard"),
+	// then the strongest players. Without wholeWords the last term doesn't count
+	// as a whole word: in a type-ahead box it's still being typed, and "carls"
+	// should find Carlsen before "Carls, Stefan".
+	Search(terms [][]string, wholeWords bool, country string, limit int) ([]PlayerWithRatings, error)
 	// Top returns a current top list in FIDE's order: rating, then games, then
 	// name; only players active in that type.
 	Top(q TopQuery) ([]PlayerWithRatings, error)
@@ -146,7 +149,7 @@ func (dao *PlayerPG) Get(fideid int) (*PlayerWithRatings, error) {
 	return &p, nil
 }
 
-func (dao *PlayerPG) Search(terms [][]string, country string, limit int) ([]PlayerWithRatings, error) {
+func (dao *PlayerPG) Search(terms [][]string, wholeWords bool, country string, limit int) ([]PlayerWithRatings, error) {
 	if len(terms) == 0 {
 		return nil, fmt.Errorf("search needs at least one term")
 	}
@@ -156,23 +159,35 @@ func (dao *PlayerPG) Search(terms [][]string, country string, limit int) ([]Play
 		args = append(args, v)
 		return fmt.Sprintf("$%d", len(args))
 	}
-	var exact []string
-	for _, alts := range terms {
-		prefix := make([]string, len(alts))
-		whole := make([]string, len(alts))
+	// Terms are [a-z0-9] only (see server.searchTerms), so no regex escaping is needed.
+	match := func(alts []string, pattern string) string {
+		ors := make([]string, len(alts))
 		for i, a := range alts {
-			// Terms are [a-z0-9] only (see server.searchTerms), so no regex escaping is needed.
-			prefix[i] = "p.name_norm ~ " + arg("(^| )"+a)
-			whole[i] = "p.name_norm ~ " + arg("(^| )"+a+"( |$)")
+			ors[i] = "p.name_norm ~ " + arg(fmt.Sprintf(pattern, a))
 		}
-		where = append(where, "("+strings.Join(prefix, " OR ")+")")
-		exact = append(exact, "("+strings.Join(whole, " OR ")+")::int")
+		return "(" + strings.Join(ors, " OR ") + ")"
+	}
+	const prefixRE, wholeRE = "(^| )%s", "(^| )%s( |$)"
+	var exact []string
+	for n, alts := range terms {
+		if wholeWords {
+			where = append(where, match(alts, wholeRE))
+			continue
+		}
+		where = append(where, match(alts, prefixRE))
+		if n < len(terms)-1 {
+			exact = append(exact, match(alts, wholeRE)+"::int")
+		}
 	}
 	if country != "" {
 		where = append(where, "p.country = "+arg(country))
 	}
+	order := ""
+	if len(exact) > 0 {
+		order = strings.Join(exact, " + ") + " DESC, "
+	}
 	q := playerWithRatings + withCurrent + " WHERE " + strings.Join(where, " AND ") +
-		" ORDER BY " + strings.Join(exact, " + ") + " DESC, coalesce(greatest(r.std_rating, r.rapid_rating, r.blitz_rating), 0) DESC, p.name, p.fideid LIMIT " + arg(limit)
+		" ORDER BY " + order + "coalesce(greatest(r.std_rating, r.rapid_rating, r.blitz_rating), 0) DESC, p.name, p.fideid LIMIT " + arg(limit)
 	players := []PlayerWithRatings{}
 	return players, dao.db.Select(&players, q, args...)
 }
